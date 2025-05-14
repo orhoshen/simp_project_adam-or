@@ -74,9 +74,9 @@ void init_simulator(simulator* simulator, char* memin_fp, char* diskin_fp, char*
     {
         simulator->regs[i] = 0;
     }
-    for (int i = 0; i < NUMBER_OF_IO_REGS; i++)
+    for (int j = 0; j < NUMBER_OF_IO_REGS; j++)
     {
-        simulator->io_regs[i] = 0;
+        simulator->io_regs[j] = 0;
     }
     memset(simulator->monitor, 0, MONITOR_SIZE * sizeof(uint8_t));
     memset(simulator->memory, 0, MEMORY_SIZE * sizeof(unsigned int));
@@ -315,7 +315,7 @@ void write_output_file_monitor(simulator* simulator, char* monitor_txt_fp, char*
 
 ////////////////////////////////////////////////////////////
 //////// RUN SIMULATOR FUNCTION
-///////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////
 
 void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char* trace_fp, char* hwregtrace_fp, char* cycles_fp, char* leds_fp, char* display7seg_fp, char* diskout_fp, char* monitor_txt_fp, char* monitor_yuv_fp)
 {
