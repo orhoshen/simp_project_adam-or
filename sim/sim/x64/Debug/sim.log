@@ -1,0 +1,3 @@
+﻿  sim.c
+LINK : warning LNK4076: invalid incremental status file 'sim\x64\Debug\sim.ilk' (which will be deleted); linking nonincrementally
+  sim.vcxproj -> C:\Users\lenovo\OneDrive - mail.tau.ac.il\Desktop\co_proj_342388717_318321759_206860389\co_proj_342388717_318321759_206860389\sim\x64\Debug\sim.exe
