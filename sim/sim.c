@@ -301,12 +301,12 @@ void write_output_file_monitor(simulator* simulator, char* monitor_txt_fp, char*
     FILE* monitor_yuv_fh = open_file_to_write(monitor_yuv_fp);
 
     // This function writes both monitor.txt and monitor.yuv output files, based on simulator->monitor array at the end of the simulator run 
-    for (int i = 0; i <= simulator->curr_monitor_index; i++)
+    for (int i = 0; i < MONITOR_SIZE; i++)
     {
         // Write each pixel to monitor.txt in a new line, in 2 hex digits
         fprintf(monitor_txt_fh, "%02X\n", simulator->monitor[i]);
         // Write each pixel to monitor.yuv in a new line, in 8 binary digits
-        fwrite(&(char)simulator->monitor[i], 1, 1, monitor_yuv_fh);
+        fwrite(&simulator->monitor[i], 1, 1, monitor_yuv_fh);
     }
 
     fclose(monitor_txt_fh);
