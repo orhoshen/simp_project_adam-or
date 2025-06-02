@@ -5,45 +5,55 @@ FILE* open_file_to_read(char* filePath)
 {
     FILE* fp = fopen(filePath, "r");
     if (fp == NULL) {
+        fprintf(stderr, "Error: Could not open file %s for reading.\n", filePath);
         return NULL; // file is invalid
     }
     return fp;
-};
+}
 
 FILE* open_file_to_write(char* filePath)
 {
     FILE* fp = fopen(filePath, "w");
     if (fp == NULL) {
+        fprintf(stderr, "Error: Could not open file %s for writing.\n", filePath);
         return NULL; // file is invalid
     }
     return fp;
-};
+}
 
-bool contains_label(char* token, int token_len)
-{
-    if ((token_len > 0)
-        && (token[token_len - 1] == ':')
-        && (token[0] != '#')) return true;//not empty label + not opcode + not comment
-    return false;
-};
+void strip_comment(char* line) {
+    char* comment_pos = strchr(line, '#');
+    if (comment_pos != NULL) {
+        *comment_pos = '\0'; // cut off the line at the '#'
+    }
+}
+
+bool contains_label(char* token, int token_len) {
+    return (token_len > 0 && token[token_len - 1] == ':'); 
+}
 
 void set_label(int pc, int local_index, int label_len, char* token, label* label_arr)
 {
     label_arr[local_index].set = true;
     label_arr[local_index].line = pc;//save current PC
-    token[label_len - 1] = '\0'; // remove the colomn
+    token[label_len - 1] = '\0'; // remove the ":"
     strcpy(label_arr[local_index].name, token); //save label name without ':'
-};
+}
+
 void set_word(int pc, char* token_add, char* token_data, word* words)
 {
-    int addr = convertToDecimal(token_add) + 1;
+    int addr = convertToDecimal(token_add);
+    if (addr < 0 || addr >= MEMORY_SIZE) {
+        fprintf(stderr, "Error: .word address %d out of bounds (0-4095)\n", addr);
+        return;
+    }
     words[addr].pc = pc;
-    words[addr].address = addr;
-    words[addr].data = convertToDecimal(token_data);
+    words[addr].address = (uint32_t)addr;
+    words[addr].data = (uint32_t)convertToDecimal(token_data);
     words[addr].set = true;
-};
+}
 
-// Function to convert a string representation of a number to decimal
+// Function to convert a string representation of a number to integer
 int convertToDecimal(const char* str) {
     // Check if the input string is empty
     if (str == NULL || *str == '\0') {
@@ -60,7 +70,7 @@ int convertToDecimal(const char* str) {
 
     // Convert the string to decimal integer
     char* endptr;
-    long decimal = strtol(str, &endptr, base);
+    long result = strtol(str, &endptr, base);
 
     // Check for conversion errors
     if (*endptr != '\0') {
@@ -68,31 +78,21 @@ int convertToDecimal(const char* str) {
         return 0;
     }
 
-    return (int)decimal; // Return the decimal integer
+    return result; // Return the decimal integer
 }
 
-void find_label_words_lines(FILE* fp, label* label_arr, word* words)
+void parse_lines(FILE* fp, label* label_arr, word* words)
 {
-
     char line[MAX_LINE_LENGTH];
-    char line_temp[MAX_LINE_LENGTH];
     int token_len = 0;
     int pc = 0; //local program counter
-    int local_index = 0;
+    int local_index = 0; // for the label array
 
 
-    //read assebly lines in order to detect LABELS
+    //read assembly lines in order to detect LABELS
     while (fgets(line, MAX_LINE_LENGTH, fp) != NULL) //itereation over the file till the end
     {
-        // code to handle lines with a comment only
-        strcpy(line_temp, line);
-        char* token_temp = strtok(line_temp, DELIMITER_C);
-        if (token_temp != NULL) {
-            if (token_temp[0] == '#') {
-                continue;
-            }
-        }
-        // up to here
+        strip_comment(line);
 
         char* token = strtok(line, DELIMITER);
         if (token)
@@ -126,12 +126,10 @@ void find_label_words_lines(FILE* fp, label* label_arr, word* words)
         char* token_rs = strtok(NULL, DELIMITER);
         char* token_rt = strtok(NULL, DELIMITER);
 
-        // I-type check ,if there is an i-type instruction 
-
+        // I-type check ,if there is an i-type instruction, for now we assume all I-type are two lines(bigimm).
         if ((token_rd != NULL) && (token_rs != NULL) && (token_rt != NULL))
         {
-            if (strcmp(token_rd, "$imm") == 0 || strcmp(token_rs, "$imm") == 0 || strcmp(token_rt, "$imm") == 0)
-            {
+            if (strcmp(token_rd, "$imm") == 0 || strcmp(token_rs, "$imm") == 0 || strcmp(token_rt, "$imm") == 0) {
                 pc += 2;
                 continue;
             }
@@ -139,50 +137,37 @@ void find_label_words_lines(FILE* fp, label* label_arr, word* words)
         }
         pc++; //address inc
     }
-};
+}
 
 
 void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
 {
     char line[MAX_LINE_LENGTH];
-    char line_temp[MAX_LINE_LENGTH];
     char* token;
     char* token1;
     char* token2;
     char* token3;
     char* token4;
     int pc = 0; //local program counter
-    bool is_i_type; //true means i instruction, false mean R intruction
 
     while (fgets(line, MAX_LINE_LENGTH, inputfp) != NULL) //itereation over the file till the end
     {
-
-        // code to handle lines with a comment only
-        strcpy(line_temp, line);
-        char* token_temp = strtok(line_temp, DELIMITER_C);
-        if (token_temp != NULL) {
-            if (token_temp[0] == '#') {
-                continue;
-            }
-        }
-        // up to here
+        strip_comment(line); //remove everything after '#' in assembly line
 
         instruction inst; //new instruction initialization
         token = strtok(line, DELIMITER); //taking the first token of line, deciding what to do accordingly
-        if (token == NULL || token[0] == '#' || token[0] == '\n' || token[0] == '\0') continue; //empty line or comment - ignore
+        if (token == NULL || token[0] == '\n' || token[0] == '\0') continue; //empty line or comment - ignore
 
-        if (words[pc].set == true) // If there is a word that should me wrotten to this address -> write word's data
+        if (words[pc].set == true) // If there is a word that should be written to this address -> write word's data
         {
-            fprintf(outputfp, "%05X\n", words[pc].data);
+            fprintf(outputfp, "%08X\n", words[pc].data);
             words[pc].set = false;
             pc++;
             continue;
         }
 
-        if (token[0] == '.')  // Word line, ignore. Already handeled.
-        {
-            continue;
-        }
+        if (token[0] == '.') continue; // Word line, ignore. Already handled.
+
         if (contains_label(token, (int)strlen(token))) // we have a label
         {
             token = strtok(NULL, DELIMITER); //taking the first real token 
@@ -198,25 +183,29 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
 
         inst.opcode = decode_opcode(token);
         inst.rd = decode_register(token1);
-
         inst.rs = decode_register(token2);
         inst.rt = decode_register(token3);
 
         if (strcmp(token1, "$imm") == 0 || strcmp(token2, "$imm") == 0 || strcmp(token3, "$imm") == 0) {
-            is_i_type = true;
-            if (strcmp(token4, "0") == 0) {
-                inst.imm = 0;
+            int imm_value = decode_imm(token4, label_arr);
+
+            // Check range for 8-bit signed immediate: -128 ≤ x ≤ 127
+            if (imm_value >= -128 && imm_value <= 127) {
+                inst.bigimm = 0;
+                inst.imm8 = (uint8_t)(imm_value & 0xFF);
+                write_i2memin(inst, outputfp, words, pc, imm_value);
+                pc += 1;
+            } else { //requires second register
+                inst.bigimm = 1;
+                inst.imm8 = (uint8_t)(imm_value & 0xFF);
+                write_i2memin(inst, outputfp, words, pc, imm_value);
+                //fprintf(outputfp, "%08X\n", (uint32_t)imm_value);
+                pc += 2;
             }
-            else {
-                inst.imm = decode_imm(token4, label_arr);
-            }
-            write_i2memin(inst, outputfp, words, pc);
-            pc += 2;
 
         }
         else {
-            is_i_type = false;
-            write_r2memin(inst, outputfp);
+            //fallback - no line found
             pc++;
         }
 
@@ -224,16 +213,6 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
     write_rest_words(outputfp, words, pc);
 }
 
-bool find_if_pc_word(word* words, int pc) {
-
-    for (int i = 0; words[i].pc != -1; ++i) {
-        if (words[i].pc == pc) {
-            return true; // Found a word with pc equal to 'pc'
-        }
-    }
-    return false; // No word with pc equal to 'pc' found
-
-}
 
 int decode_opcode(char* opcode) {
     if (strcmp(opcode, "add") == 0) return 0;
@@ -258,7 +237,7 @@ int decode_opcode(char* opcode) {
     if (strcmp(opcode, "in") == 0) return 19;
     if (strcmp(opcode, "out") == 0) return 20;
     if (strcmp(opcode, "halt") == 0) return 21;
-    return -1; // asuming correct input we will not get there
+    return -1; // assuming correct input we will not get there
 }
 
 int decode_register(char* reg_name) {
@@ -278,14 +257,14 @@ int decode_register(char* reg_name) {
     if (strcmp(reg_name, "$gp") == 0) return 13;
     if (strcmp(reg_name, "$sp") == 0) return 14;
     if (strcmp(reg_name, "$ra") == 0) return 15;
-    return -1; // asuming correct input we will not get there
+    return -1; // assuming correct input we will not get there
 }
 
 
 int decode_imm(char* imm, label* labels) {
 
     for (int i = 0; i < MAX_NUMBER_OF_LABELS; i++) {
-        if (labels[i].set = 0) break;
+        if (labels[i].set == 0) break;
         if (strcmp(labels[i].name, imm) == 0) { // found label, return address
             return labels[i].line;
         }
@@ -294,17 +273,27 @@ int decode_imm(char* imm, label* labels) {
 
 }
 
-void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc) {
-    fprintf(outputfp, "%02X%X%X%X\n", inst.opcode, inst.rd, inst.rs, inst.rt);
-    if (words[pc + 1].set == true) // If there is a word-writing in the next line, write it before inc imm
-        fprintf(outputfp, "%05X\n", words[pc + 1].data);
-    else
-        fprintf(outputfp, "%05X\n", inst.imm);
+void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc, int imm_value) {
+    // Build the full 32-bit instruction word
+    uint32_t encoded =
+        (inst.opcode << 24) |
+        (inst.rd     << 20) |
+        (inst.rs     << 16) |
+        (inst.rt     << 12) |
+        (0           << 9 ) |   // reserved bits = 0
+        (inst.bigimm << 8 ) |
+        (inst.imm8   & 0xFF);   // force to 8 bits
 
-}
+    fprintf(outputfp, "%08X\n", encoded);
 
-void write_r2memin(instruction inst, FILE* outputfp) {
-    fprintf(outputfp, "%02X%X%X%X\n", inst.opcode, inst.rd, inst.rs, inst.rt);
+    // Write second word only if bigimm == 1
+    if (inst.bigimm == 1) {
+        if (words[pc + 1].set == true) {
+            fprintf(outputfp, "%08X\n", words[pc + 1].data); // make sure no word is there
+        } else {
+            fprintf(outputfp, "%08X\n", (uint32_t)imm_value); //write the imm32
+        }
+    }
 }
 
 void write_rest_words(FILE* memin_fp, word* words, int pc) {
@@ -316,9 +305,9 @@ void write_rest_words(FILE* memin_fp, word* words, int pc) {
         {
             for (int j = temp; j + 1 < i; j++)
             {
-                fprintf(memin_fp, "%05X\n", 0x0);
+                fprintf(memin_fp, "%08X\n", 0x0);
             }
-            fprintf(memin_fp, "%05X\n", words[i].data);
+            fprintf(memin_fp, "%08X\n", words[i].data);
             temp = i;
         }
     }
@@ -330,7 +319,7 @@ int main(int argc, char* argv[])
 {
     //valid file check
     if (argc != 3) {
-        printf("Wrong input, you gave %d arguments insted of 3", argc);
+        fprintf(stderr, "Wrong input, expected 2 arguments (input.asm output.memin), got %d\n", argc - 1);
         return 1;
     }
     FILE* assembly_fp = open_file_to_read(argv[1]);
@@ -338,12 +327,12 @@ int main(int argc, char* argv[])
     label labels[MAX_NUMBER_OF_LABELS]; //set labels array at max mem size
     word words[MAX_NUMBER_OF_LABELS]; // words are same as labels
 
-    find_label_words_lines(assembly_fp, labels, words);
-
+    parse_lines(assembly_fp, labels, words);
     fclose(assembly_fp);
+
     FILE* assembly_fp1 = open_file_to_read(argv[1]);
     write2memin(assembly_fp1, labels, memin_fp, words);
-    fclose(assembly_fp);
+    fclose(assembly_fp1);
     fclose(memin_fp);
     return 0;
 }
