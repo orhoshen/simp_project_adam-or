@@ -13,21 +13,23 @@
 
 typedef struct label {
     char name[MAX_LABEL_LENGTH];
-    int line;
+    uint32_t line;
     bool set;
 }label;
 
 typedef struct instruction {
-    unsigned int opcode : 8;
-    unsigned int rd : 4;
-    unsigned int rs : 4;
-    unsigned int rt : 4;
-    unsigned int imm : 20;
+    uint32_t opcode     : 8;
+    uint32_t rd         : 4;
+    uint32_t rs         : 4;
+    uint32_t rt         : 4;
+    uint32_t reserved   : 3;
+    uint32_t bigimm     : 1;
+    uint32_t imm8       : 8;
 }instruction;
 
 typedef struct word_inst {
-    long address; //for word inst
-    unsigned int data : 20;
+    uint32_t address; //for word inst
+    uint32_t data;
     int pc;
     bool set;
 
@@ -35,14 +37,13 @@ typedef struct word_inst {
 
 FILE* open_file_to_read(char* fp);
 FILE* open_file_to_write(char* fp);
-void find_label_words_lines(FILE* fp, label* label_arr, word* words);
-bool contains_label(char* label, int label_len);
+void strip_comment(char* line);
+void parse_lines(FILE* fp, label* label_arr, word* words);
+bool contains_lable(char* label, int label_len);
 void set_lable(int pc, int local_index, int lable_len, char* token, label* label_arr);
-
+bool is_branch(char* opcode);
 void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words);
-void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc);
-void write_r2memin(instruction inst, FILE* outputfp);
-bool find_if_pc_word(word* words, int pc);
+void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc, int imm_value);
 int decode_opcode(char* opcode);
 int decode_register(char* rd);
 int decode_imm(char* imm, label* label_arr);

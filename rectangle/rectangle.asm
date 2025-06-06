@@ -47,12 +47,12 @@ COL_LOOP:
 
     # advance column
     add  $s5, $s5, $imm, 1
-    bne  $s5, $t0, COL_LOOP         # repeat until col == width
+    bne  $imm, $s5, $t0, COL_LOOP         # repeat until col == width
 
     # advance to next row
     add  $s4, $s4, $imm, 256        # row_base += 256
     sub  $t1, $t1, $imm, 1          # height--
-    bne  $t1, $zero, ROW_LOOP       # repeat until row == height
+    bne  $imm, $t1, $zero, ROW_LOOP       # repeat until row == height
 
     #Stage 4: finish  all done
     halt $zero, $zero, $zero, 0

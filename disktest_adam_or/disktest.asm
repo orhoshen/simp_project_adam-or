@@ -86,7 +86,7 @@ WRITE_RESULT:
    ### POLL_LABEL: spin until diskstatus == 0
 POLL_LABEL:
     in   $t6, $zero, $imm, DISKSTATUS_REG_ADDR   # t6 = diskstatus
-    beq $imm, $t6, $zero, POLL_RETURN_LABEL           # if 0, disk is free → return
+    beq  $imm, $t6, $zero, POLL_RETURN_LABEL           # if 0, disk is free → return
     j    POLL_LABEL                              # else keep polling
 POLL_RETURN_LABEL:
     jr   $ra                                      # back to caller
