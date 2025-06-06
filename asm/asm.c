@@ -1,5 +1,5 @@
-#define _CRT_SECURE_NO_WARNINGS
 #include "asm.h"
+#define _CRT_SECURE_NO_WARNINGS
 
 FILE* open_file_to_read(char* filePath)
 {
@@ -139,6 +139,15 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
     }
 }
 
+bool is_branch(char* opcode) {
+    return strcmp(opcode, "beq") == 0 ||
+           strcmp(opcode, "bne") == 0 ||
+           strcmp(opcode, "blt") == 0 ||
+           strcmp(opcode, "bgt") == 0 ||
+           strcmp(opcode, "ble") == 0 ||
+           strcmp(opcode, "bge") == 0;
+}
+
 
 void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
 {
@@ -185,6 +194,21 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         inst.rd = decode_register(token1);
         inst.rs = decode_register(token2);
         inst.rt = decode_register(token3);
+
+        if (is_branch(token)) {
+            inst.rd = decode_register(token1);  // will be replaced
+            inst.rs = decode_register(token2);
+            inst.rt = decode_register(token3);
+
+            int label_addr = decode_imm(token4, label_arr);
+            inst.rd = 1;  // $imm is register 1 — project says use it to hold target
+            inst.bigimm = 1; // address of label is in imm32
+            inst.imm8 = 0;  // not used in HW if bigimm=1
+
+            write_i2memin(inst, outputfp, words, pc, label_addr);
+            pc += 2;
+            continue;
+        }
 
         if (strcmp(token1, "$imm") == 0 || strcmp(token2, "$imm") == 0 || strcmp(token3, "$imm") == 0) {
             int imm_value = decode_imm(token4, label_arr);

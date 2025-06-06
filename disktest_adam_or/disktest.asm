@@ -1,5 +1,6 @@
 #------------------------------------------------------------------------------
-# Overview
+# disktest.asm
+#Overview
 #------------------------------------------------------------------------------
 # Each sector = 128 words. We are interesting in only sectors 0-3
 # for (i = 0; i < 128; i++): sector4[i] = sector0[i] + sector1[i] + sector2[i] + sector3[i]
@@ -38,7 +39,7 @@ READ_SECTORS_LOOP_LABEL:
     add   $t0, $zero, $imm, DISK_CMD_READ                   #preset t0 to 1 because diskcmd =1 is read mode
     out   $t0, $zero, $imm, DISKCMD_REG_ADDR                # set diskcmd to READ (1)
     jal   $ra, $imm, $zero, POLL_LABEL                      # wait until done
-    bne   $s0, $zero, READ_SECTORS_LOOP_LABEL               # loop until s0 == 0
+    bne   $imm, $s0, $zero, READ_SECTORS_LOOP_LABEL            # loop until s0 == 0
 
 
         ### STAGE 2: Sum the sectors ###  for i = 0…127 ⇒ RESULT[i] = SECT0[i] + SECT1[i] + SECT2[i] + SECT3[i]
@@ -58,7 +59,7 @@ SUM_LOOP_LABEL:
     lw    $t3, $zero, $s4, 0           # t3 = SECT3[i]
     add   $t2, $t2, $t3, 0              # t2 = sum of four sectors
 
-    sw    $t2, $s5, $zero, 0           # RESULT[i] ← t2
+    sw    $t2, $s5, $zero, 0           # RESULT[i] = t2
 
     sub   $s0, $s0, $imm, 1            # i++
     add   $s1, $s1, $imm, 1
@@ -66,7 +67,7 @@ SUM_LOOP_LABEL:
     add   $s3, $s3, $imm, 1
     add   $s4, $s4, $imm, 1
     add   $s5, $s5, $imm, 1
-    bne   $s0, $zero, SUM_LOOP_LABEL   # while s0 != 0, repeat
+    bne $imm, $s0, $zero, SUM_LOOP_LABEL   # while s0 != 0, repeat
 
 
     ### WRITE RESULT BUFFER to sector 4
@@ -85,7 +86,7 @@ WRITE_RESULT:
    ### POLL_LABEL: spin until diskstatus == 0
 POLL_LABEL:
     in   $t6, $zero, $imm, DISKSTATUS_REG_ADDR   # t6 = diskstatus
-    beq  $t6, $zero, POLL_RETURN_LABEL           # if 0, disk is free → return
+    beq $imm, $t6, $zero, POLL_RETURN_LABEL           # if 0, disk is free → return
     j    POLL_LABEL                              # else keep polling
 POLL_RETURN_LABEL:
     jr   $ra                                      # back to caller
