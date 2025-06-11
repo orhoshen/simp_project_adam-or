@@ -34,4 +34,4 @@ EXIT:
 	halt $zero, $zero, $zero, 0		     # otherwise, we finished the triangle -> exit program 
 .word 256 0      # 3								
 .word 257 65280  # 20995							
-.word 258 65536  # 21105								
+.word 258 65536  # 21105

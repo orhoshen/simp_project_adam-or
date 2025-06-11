@@ -89,53 +89,63 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
     int local_index = 0; // for the label array
 
 
-    //read assembly lines in order to detect LABELS
-    while (fgets(line, MAX_LINE_LENGTH, fp) != NULL) //itereation over the file till the end
+    //read assembly lines in order to detect LABELS and calculate PC
+    while (fgets(line, MAX_LINE_LENGTH, fp) != NULL)
     {
         strip_comment(line);
 
         char* token = strtok(line, DELIMITER);
-        if (token)
+        if (!token) continue;
+
+        // Word directive handling
+        if (token[0] == '.')
         {
-            // Word scanning
-            if (token[0] == '.') // word instruction increment
+            char* token_ad = strtok(NULL, DELIMITER);
+            char* token_data = strtok(NULL, DELIMITER);
+            set_word(pc, token_ad, token_data, words);
+            pc++;
+            continue;
+        }
+
+        // Label handling
+        token_len = (int)strlen(token);
+        if (contains_label(token, token_len))
+        {
+            set_label(pc, local_index, token_len, token, label_arr);
+            local_index++;
+            token = strtok(NULL, DELIMITER);
+            if (token == NULL)
             {
-                char* token_ad = strtok(NULL, DELIMITER);
-                char* token_data = strtok(NULL, DELIMITER);
-                set_word(pc, token_ad, token_data, words);
-                pc++;
                 continue;
             }
-
-            // Label scaning
-            token_len = (int)strlen(token);
-            if (contains_label(token, token_len))
-            {
-                set_label(pc, local_index, token_len, token, label_arr);
-                local_index++; //laber_arr index inc
-                token = strtok(NULL, DELIMITER);
-                if (token == NULL)
-                {
-                    continue;
-                }
-            }
         }
-        else continue;
 
+        // Parse operands
         char* token_rd = strtok(NULL, DELIMITER);
         char* token_rs = strtok(NULL, DELIMITER);
         char* token_rt = strtok(NULL, DELIMITER);
+        char* token_imm = strtok(NULL, DELIMITER);
 
-        // I-type check ,if there is an i-type instruction, for now we assume all I-type are two lines(bigimm).
-        if ((token_rd != NULL) && (token_rs != NULL) && (token_rt != NULL))
-        {
-            if (strcmp(token_rd, "$imm") == 0 || strcmp(token_rs, "$imm") == 0 || strcmp(token_rt, "$imm") == 0) {
-                pc += 2;
-                continue;
+        bool need_bigimm = false;
+        if (is_branch(token)) {
+            need_bigimm = true;
+        } else if (token_imm != NULL) {
+            if (!(isdigit((unsigned char)token_imm[0]) || token_imm[0] == '-' || token_imm[0] == '+'))
+            {
+                // Operand is a label, always requires big immediate
+                need_bigimm = true;
             }
-
+            else
+            {
+                long imm_val = strtol(token_imm, NULL, 0);
+                if (imm_val < -128 || imm_val > 127)
+                {
+                    need_bigimm = true;
+                }
+            }
         }
-        pc++; //address inc
+
+        pc += need_bigimm ? 2 : 1;
     }
 }
 
@@ -196,14 +206,23 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         inst.rt = decode_register(token3);
 
         if (is_branch(token)) {
-            inst.rd = decode_register(token1);  // will be replaced
-            inst.rs = decode_register(token2);
-            inst.rt = decode_register(token3);
+            int label_addr;
 
-            int label_addr = decode_imm(token4, label_arr);
-            inst.rd = 1;  // $imm is register 1 — project says use it to hold target
-            inst.bigimm = 1; // address of label is in imm32
-            inst.imm8 = 0;  // not used in HW if bigimm=1
+            if (token4 == NULL) {
+                // Format: beq rs, rt, label
+                inst.rs = decode_register(token1);
+                inst.rt = decode_register(token2);
+                label_addr = decode_imm(token3, label_arr);
+            } else {
+                // Format: beq $imm, rs, rt, label
+                inst.rs = decode_register(token2);
+                inst.rt = decode_register(token3);
+                label_addr = decode_imm(token4, label_arr);
+            }
+
+            inst.rd = 1;  // $imm register holds the label address
+            inst.bigimm = 1;
+            inst.imm8 = 0;  // not used when bigimm=1
 
             write_i2memin(inst, outputfp, words, pc, label_addr);
             pc += 2;
@@ -227,10 +246,12 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
                 pc += 2;
             }
 
-        }
-        else {
-            //fallback - no line found
-            pc++;
+        } else {
+            // Regular R-type instruction without immediate
+            inst.bigimm = 0;
+            inst.imm8 = 0;
+            write_i2memin(inst, outputfp, words, pc, 0);
+            pc += 1;
         }
 
     }
@@ -286,6 +307,9 @@ int decode_register(char* reg_name) {
 
 
 int decode_imm(char* imm, label* labels) {
+    if (imm == NULL) {
+        return 0;
+    }
 
     for (int i = 0; i < MAX_NUMBER_OF_LABELS; i++) {
         if (labels[i].set == 0) break;
