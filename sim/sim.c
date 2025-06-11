@@ -108,23 +108,39 @@ instruction* initialize_instruction(simulator* sim)
     unsigned int rs = 0;
     unsigned int rt = 0;
     unsigned int instruction_line = sim->memory[sim->PC]; // Load current instruction based on current PC
-    // Isolate each instruction field using masking
+
+    // Extract imm8 and bigimm flag before shifting
+    unsigned int imm8 = instruction_line & 0xFF;         // bits[7:0]
+    unsigned int bigimm = (instruction_line >> 8) & 0x1; // bit[8]
+    instruction_line >>= 12;                             // skip reserved + imm fields
+
+    // Isolate each register and opcode field using masking
     rt = instruction_line & 0xF;
-    instruction_line = instruction_line >> 4;
+    instruction_line >>= 4;
     rs = instruction_line & 0xF;
-    instruction_line = instruction_line >> 4;
+    instruction_line >>= 4;
     rd = instruction_line & 0xF;
-    instruction_line = instruction_line >> 4;
+    instruction_line >>= 4;
     opcode = instruction_line & 0xFF;
 
     // Instruction initialization
-    if ((rt == REG_IMM) || (rd == REG_IMM) || (rs == REG_IMM))
+    inst->i_type = bigimm ? true : false;
+    if (bigimm)
     {
-        inst->i_type = true;
-        inst->imm = sim->memory[(sim->PC + 1)];
+        inst->imm = sim->memory[sim->PC + 1];
         sim->regs[REG_IMM] = (int32_t)inst->imm;
     }
-    else inst->i_type = false;
+    else if (rd == REG_IMM || rs == REG_IMM || rt == REG_IMM)
+    {
+        // Small immediate encoded in imm8 field
+        int32_t sext = (int8_t)(imm8 & 0xFF); // sign extend 8-bit
+        inst->imm = sext;
+        sim->regs[REG_IMM] = sext;
+    }
+    else
+    {
+        inst->imm = 0;
+    }
     inst->opcode = opcode;
     inst->rd = rd;
     inst->rt = rt;
@@ -229,7 +245,7 @@ void write_output_file_memout(simulator* simulator, char* memout_fp)
     FILE* memout_fh = open_file_to_write(memout_fp);
     for (int i = 0; i < MEMORY_SIZE; i++)
     {
-        fprintf(memout_fh, "%05X\n", simulator->memory[i]);
+        fprintf(memout_fh, "%08X\n", simulator->memory[i]);
     }
     fclose(memout_fh);
     return;
@@ -250,7 +266,7 @@ void write_output_file_trace(simulator* simulator, char* trace_fp, instruction* 
     FILE* trace_fh = open_file_to_append(trace_fp);
     unsigned int R1 = inst->i_type ? inst->imm : 0;
 
-    fprintf(trace_fh, "%03X %05X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X\n",
+    fprintf(trace_fh, "%03X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X\n",
         simulator->PC,
         simulator->memory[simulator->PC],
         simulator->regs[0], // 8 zeros in R0 field ($zero is a protected register and will always hold 0)
@@ -289,7 +305,7 @@ void write_output_file_diskout(simulator* simulator, char* diskout_fp)
     FILE* diskout_fh = open_file_to_write(diskout_fp);
     for (int i = 0; i < DISK_SIZE; i++)
     {
-        fprintf(diskout_fh, "%05X\n", simulator->disk[i]);
+        fprintf(diskout_fh, "%08X\n", simulator->disk[i]);
     }
     fclose(diskout_fh);
     return;
