@@ -1,0 +1,35 @@
+# Build outputs
+asm/*.exe
+asm/asm_debug
+sim/*.exe
+sim/sim_debug
+
+# Visual Studio artifacts
+*.vcxproj*
+*.sln
+.vs/
+
+# Output files from tests
+memin.txt
+memout.txt
+regout.txt
+trace.txt
+hwregtrace.txt
+cycles.txt
+leds.txt
+display7seg.txt
+diskout.txt
+monitor.txt
+monitor.yuv
+*/memin.txt
+*/memout.txt
+*/regout.txt
+*/trace.txt
+*/diskout.txt
+*/monitor.txt
+
+# Ignore compiled executables and debug folders
+*.exe
+*/x64/
+*/Debug/
+*/monitor.yuv

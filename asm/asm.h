@@ -3,6 +3,7 @@
 #include<stdbool.h>
 #include<stdlib.h>
 #include<ctype.h>
+#include<stdint.h>
 
 #define MAX_LINE_LENGTH (500)
 #define MEMORY_SIZE (4096)
