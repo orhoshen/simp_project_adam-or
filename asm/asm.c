@@ -40,14 +40,13 @@ void set_label(int pc, int local_index, int label_len, char* token, label* label
     strcpy(label_arr[local_index].name, token); //save label name without ':'
 }
 
-void set_word(int pc, char* token_add, char* token_data, word* words)
+void set_word(char* token_add, char* token_data, word* words)
 {
     int addr = convertToDecimal(token_add);
     if (addr < 0 || addr >= MEMORY_SIZE) {
         fprintf(stderr, "Error: .word address %d out of bounds (0-4095)\n", addr);
         return;
     }
-    words[addr].pc = pc;
     words[addr].address = (uint32_t)addr;
     words[addr].data = (uint32_t)convertToDecimal(token_data);
     words[addr].set = true;
@@ -70,7 +69,7 @@ int convertToDecimal(const char* str) {
 
     // Convert the string to decimal integer
     char* endptr;
-    long result = strtol(str, &endptr, base);
+    int result = strtol(str, &endptr, base);
 
     // Check for conversion errors
     if (*endptr != '\0') {
@@ -78,7 +77,21 @@ int convertToDecimal(const char* str) {
         return 0;
     }
 
-    return result; // Return the decimal integer
+    return result; // Return the integer
+}
+
+static inline void maybe_flush(int pc,
+                               char *pending,
+                               bool *has_pending,
+                               int  *idx,
+                               label *tbl)
+{
+    if (!*has_pending) return;
+    tbl[*idx].set  = true;
+    tbl[*idx].line = pc;
+    strcpy(tbl[*idx].name, pending);
+    *has_pending   = false;
+    (*idx)++;
 }
 
 void parse_lines(FILE* fp, label* label_arr, word* words)
@@ -87,7 +100,8 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
     int token_len = 0;
     int pc = 0; //local program counter
     int local_index = 0; // for the label array
-
+    char pending_label[MAX_LABEL_LENGTH] = {0}; //to deal with lines with label & instruction
+    bool has_pending = false; //to deal with lines with label & instruction
 
     //read assembly lines in order to detect LABELS
     while (fgets(line, MAX_LINE_LENGTH, fp) != NULL) //itereation over the file till the end
@@ -102,8 +116,10 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
             {
                 char* token_ad = strtok(NULL, DELIMITER);
                 char* token_data = strtok(NULL, DELIMITER);
-                set_word(pc, token_ad, token_data, words);
-                pc++;
+                int   addr       = convertToDecimal(token_ad);
+                set_word(token_ad, token_data, words);
+                if (addr >= pc)   
+                    pc = addr + 1;
                 continue;
             }
 
@@ -111,11 +127,14 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
             token_len = (int)strlen(token);
             if (contains_label(token, token_len))
             {
-                set_label(pc, local_index, token_len, token, label_arr);
-                local_index++; //laber_arr index inc
-                token = strtok(NULL, DELIMITER);
-                if (token == NULL)
-                {
+                /* remember the label text but DON’T set it yet */
+                token[token_len - 1] = '\0';         
+                strcpy(pending_label, token);
+                has_pending = true;
+                token = strtok(NULL, DELIMITER);      
+                if (token == NULL) {
+                    set_label(pc, local_index++, token_len, pending_label, label_arr);
+                    has_pending = false;
                     continue;
                 }
             }
@@ -125,17 +144,39 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
         char* token_rd = strtok(NULL, DELIMITER);
         char* token_rs = strtok(NULL, DELIMITER);
         char* token_rt = strtok(NULL, DELIMITER);
+        char* token_imm = strtok(NULL, DELIMITER);
 
-        // I-type check ,if there is an i-type instruction, for now we assume all I-type are two lines(bigimm).
+
+        // I-type check ,check if bigimm is used and advance pc accordingly
         if ((token_rd != NULL) && (token_rs != NULL) && (token_rt != NULL))
         {
-            if (strcmp(token_rd, "$imm") == 0 || strcmp(token_rs, "$imm") == 0 || strcmp(token_rt, "$imm") == 0) {
-                pc += 2;
-                continue;
+            bool uses_imm = (strcmp(token_rd, "$imm") == 0) ||
+                            (strcmp(token_rs, "$imm") == 0) ||
+                            (strcmp(token_rt, "$imm") == 0) ||
+                            is_branch(token) ||
+                            (strcmp(token, "jal") == 0);
+            if (uses_imm)
+            {
+                bool bigimm = true;
+                if (token_imm != NULL)
+                {
+                    char *endptr;
+                    long val = strtol(token_imm, &endptr, 0);
+                    if (*endptr == '\0' && val >= -128 && val <= 127)
+                        bigimm = false;
+                }
+                pc += bigimm ? 2:1;
+                maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr);
             }
-
+            else 
+            {
+                pc++; //for 1 line I instruction
+                maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr);
+            }
+            continue;
         }
-        pc++; //address inc
+    pc++; // ensure PC increases for valid lines that fall through
+    maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr);
     }
 }
 
@@ -148,6 +189,27 @@ bool is_branch(char* opcode) {
            strcmp(opcode, "bge") == 0;
 }
 
+static inline int decode_opcode_die(char *opc, int pc)
+{
+    int code = decode_opcode(opc);
+    if (code == -1) {
+        fprintf(stderr, "Error: unknown opcode '%s' at PC %d\n", opc, pc);
+        exit(1);
+    }
+    return code;
+}
+
+static inline int decode_reg_die(char *reg, int pc)
+{
+    if (reg == NULL) return 0;            /* caller decides if NULL legal   */
+    int r = decode_register(reg);
+    if (r == -1) {
+        fprintf(stderr, "Error: unknown register '%s' at PC %d\n", reg, pc);
+        exit(1);
+    }
+    return r;
+}
+
 
 void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
 {
@@ -156,7 +218,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
     char* token1;
     char* token2;
     char* token3;
-    char* token4;
+    //char* token4; fixme probably not in need if so delete
     int pc = 0; //local program counter
 
     while (fgets(line, MAX_LINE_LENGTH, inputfp) != NULL) //itereation over the file till the end
@@ -171,7 +233,6 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         {
             fprintf(outputfp, "%08X\n", words[pc].data);
             words[pc].set = false;
-            pc++;
             continue;
         }
 
@@ -184,34 +245,50 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         }
 
         // Handling assembly - regular commands
-
         token1 = strtok(NULL, DELIMITER); //taking second token-will represent rd reg
         token2 = strtok(NULL, DELIMITER); //taking third token-will represent rs reg
         token3 = strtok(NULL, DELIMITER); //taking fourth token-will represent rt reg
-        token4 = strtok(NULL, DELIMITER); //taking fifth token-will represent const
+        //token4 = strtok(NULL, DELIMITER); //fixme probably not needed delete if so //taking fifth token-will represent const
 
-        inst.opcode = decode_opcode(token);
-        inst.rd = decode_register(token1);
-        inst.rs = decode_register(token2);
-        inst.rt = decode_register(token3);
+        inst.opcode = decode_opcode_die(token, pc);
 
         if (is_branch(token)) {
-            inst.rd = decode_register(token1);  // will be replaced
-            inst.rs = decode_register(token2);
-            inst.rt = decode_register(token3);
+            inst.rd = decode_reg_die(token1, pc);      //only in branch lines
+            inst.rs = decode_reg_die(token2, pc);
+            int label_addr = decode_imm(token3, label_arr);
+            inst.rd   = 1;          /* $imm holds target */
+            inst.bigimm = 1;
+            inst.imm8   = 0;
+            write_i2memin(inst, outputfp, words, pc, label_addr);
+            pc += 2;
+            continue;
+        }
 
-            int label_addr = decode_imm(token4, label_arr);
-            inst.rd = 1;  // $imm is register 1 — project says use it to hold target
-            inst.bigimm = 1; // address of label is in imm32
-            inst.imm8 = 0;  // not used in HW if bigimm=1
+        if (strcmp(token, "jal") == 0) //in case we need to jump to a label
+        {
+            int label_addr = decode_imm(token1, label_arr); 
+
+            inst.rd     = 15;
+            inst.rs     = 0;
+            inst.rt     = 0;
+            inst.bigimm = 1;
+            inst.imm8   = 0;
 
             write_i2memin(inst, outputfp, words, pc, label_addr);
             pc += 2;
             continue;
         }
 
-        if (strcmp(token1, "$imm") == 0 || strcmp(token2, "$imm") == 0 || strcmp(token3, "$imm") == 0) {
-            int imm_value = decode_imm(token4, label_arr);
+        inst.rd = decode_reg_die(token1, pc);
+        inst.rs = decode_reg_die(token2, pc);
+        inst.rt = decode_reg_die(token3, pc);
+
+        bool uses_imm =
+            (token1 && strcmp(token1,"$imm")==0) ||
+            (token2 && strcmp(token2,"$imm")==0) ||
+            (token3 && strcmp(token3,"$imm")==0);
+        if (uses_imm) {
+            int imm_value = decode_imm(token3, label_arr);
 
             // Check range for 8-bit signed immediate: -128 ≤ x ≤ 127
             if (imm_value >= -128 && imm_value <= 127) {
@@ -226,15 +303,16 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
                 //fprintf(outputfp, "%08X\n", (uint32_t)imm_value);
                 pc += 2;
             }
-
         }
         else {
-            //fallback - no line found
-            pc++;
+            inst.bigimm = 0;
+            inst.imm8   = 0;
+            write_i2memin(inst, outputfp, words, pc, 0);
+            pc += 1;
         }
 
     }
-    write_rest_words(outputfp, words, pc);
+    write_rest_words(outputfp, words, pc); //only after finish looping all lines
 }
 
 
@@ -286,7 +364,10 @@ int decode_register(char* reg_name) {
 
 
 int decode_imm(char* imm, label* labels) {
-
+    if (imm == NULL) {
+        fprintf(stderr, "Error: NULL immediate or label.\n");
+        exit(1);
+    }
     for (int i = 0; i < MAX_NUMBER_OF_LABELS; i++) {
         if (labels[i].set == 0) break;
         if (strcmp(labels[i].name, imm) == 0) { // found label, return address
@@ -314,6 +395,7 @@ void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc, int im
     if (inst.bigimm == 1) {
         if (words[pc + 1].set == true) {
             fprintf(outputfp, "%08X\n", words[pc + 1].data); // make sure no word is there
+            words[pc + 1].set = false; //prevent duplicate
         } else {
             fprintf(outputfp, "%08X\n", (uint32_t)imm_value); //write the imm32
         }
@@ -351,7 +433,13 @@ int main(int argc, char* argv[])
     label labels[MAX_NUMBER_OF_LABELS]; //set labels array at max mem size
     word words[MAX_NUMBER_OF_LABELS]; // words are same as labels
 
+    memset(labels, 0, sizeof(labels));
+    memset(words,  0, sizeof(words));
+
     parse_lines(assembly_fp, labels, words);
+    for (int i = 0; i < MAX_NUMBER_OF_LABELS && labels[i].set; i++) {
+        printf("Label '%s' is at PC = %d\n", labels[i].name, labels[i].line);
+    }
     fclose(assembly_fp);
 
     FILE* assembly_fp1 = open_file_to_read(argv[1]);
