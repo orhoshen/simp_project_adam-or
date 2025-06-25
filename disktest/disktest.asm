@@ -1,92 +1,100 @@
 #------------------------------------------------------------------------------
 # disktest.asm
-#Overview
-#------------------------------------------------------------------------------
-# Each sector = 128 words. We are interesting in only sectors 0-3
-# for (i = 0; i < 128; i++): sector4[i] = sector0[i] + sector1[i] + sector2[i] + sector3[i]
-# We would like to avoid reading each sector 128 times as this we take a long time so we decided to load each of the sectors
-# We pick five non-overlapping buffers:
-#   SECT0 → 1000-1127, SECT1 → 1128-1255, SECT2 → 1256-1383, SECT3 → 1384-1511, RESULT(SECT4) → 1512-1639
+# Purpose:
+#   Sum the contents of disk sectors 0-3 and write the result to sector 4.
+#   Uses DMA disk read/write and memory-mapped I/O.
 #------------------------------------------------------------------------------
 
-    ### Constants ###
-NUM_OF_SECTORS_TO_TEST = 4
-NUM_LINES  = 128
-SECT0_BUF  = 1000
-SECT1_BUF  = 1128
-SECT2_BUF  = 1256
-SECT3_BUF  = 1384
-RESULT_BUF = 1512
+# Constants (commented for reference)
+# SECT0_BUF = 1000
+# SECT1_BUF = 1128
+# SECT2_BUF = 1256
+# SECT3_BUF = 1384
+# RESULT_BUF = 1512
 
-DISKCMD_REG_ADDR    = 14
-DISKSECTOR_REG_ADDR = 15
-DISKBUFFER_REG_ADDR = 16
-DISKSTATUS_REG_ADDR = 17
+# Disk I/O Register Indices
+# diskcmd    = 14
+# disksector = 15
+# diskbuffer = 16
+# diskstatus = 17
 
-DISK_CMD_IDLE = 0
-DISK_CMD_READ = 1
-DISK_CMD_WRITE = 2
+# STAGE 1: Load sectors 0–3 into memory buffers
+# Using: $s0 = sector index (0–3), $s1 = buffer ptr, $t0 = constant 1, $t1 = sector #
+#        $t2 = poll scratch
 
-        ### STAGE 1: read the sectors ###
-    add   $s0, $zero, $imm, NUM_OF_SECTORS_TO_TEST  #s0 = 4 for loop of our sectors
-    add   $s1, $zero, $imm, RESULT_BUF               #s1 = 1512 to loop the buffers of the address
-READ_SECTORS_LOOP_LABEL:
-    jal   $ra, $imm, $zero, POLL_LABEL                      # wait until diskstatus==0 (free)
-    sub   $s0, $s0, $imm, 1                                 #preset the disk sector (and index)
-    sub   $s1, $s1, $imm, 128                               #preset the buffer address   
-    out   $s0, $zero, $imm, DISKSECTOR_REG_ADDR             # set disksector to current sector 3->2->1->0
-    out   $s1, $zero, $imm, DISKBUFFER_REG_ADDR             # set diskbuffer to the correct sector buffer
-    add   $t0, $zero, $imm, DISK_CMD_READ                   #preset t0 to 1 because diskcmd =1 is read mode
-    out   $t0, $zero, $imm, DISKCMD_REG_ADDR                # set diskcmd to READ (1)
-    jal   $ra, $imm, $zero, POLL_LABEL                      # wait until done
-    bne   $imm, $s0, $zero, READ_SECTORS_LOOP_LABEL            # loop until s0 == 0
+    add   $s0, $zero, $imm, 4         # sector counter = 4
+    add   $s1, $zero, $imm, 1512      # start of RESULT_BUF + 128*0
 
+READ_SECTORS_LOOP:
+    jal   $ra, $imm, $zero, POLL     # wait for disk to be free
 
-        ### STAGE 2: Sum the sectors ###  for i = 0…127 ⇒ RESULT[i] = SECT0[i] + SECT1[i] + SECT2[i] + SECT3[i]
-#initialize    
-    add   $s0, $zero, $imm, NUM_LINES  # $s0 = loop counter (128)
-    add   $s1, $zero, $imm, SECT0_BUF  # pointer into sector0 buffer
-    add   $s2, $zero, $imm, SECT1_BUF
-    add   $s3, $zero, $imm, SECT2_BUF
-    add   $s4, $zero, $imm, SECT3_BUF
-    add   $s5, $zero, $imm, RESULT_BUF
-SUM_LOOP_LABEL:
-    lw    $t2, $zero, $s1, 0           # t2 = SECT0[i]
-    lw    $t3, $zero, $s2, 0           # t3 = SECT1[i]
-    add   $t2, $t2, $t3, 0              # t2 = SECT0[i]+SECT1[i]
-    lw    $t3, $zero, $s3, 0           # t3 = SECT2[i]
-    add   $t2, $t2, $t3, 0              #t2 = SECT0[i]+SECT1[i] + SECT2[i]
-    lw    $t3, $zero, $s4, 0           # t3 = SECT3[i]
-    add   $t2, $t2, $t3, 0              # t2 = sum of four sectors
+    sub   $s0, $s0, $imm, 1          # s0 = s0 - 1 → sector number
+    sub   $s1, $s1, $imm, 128        # s1 = s1 - 128 → current buffer addr
 
-    sw    $t2, $s5, $zero, 0           # RESULT[i] = t2
+    out   $s0, $zero, $imm, 15       # disksector = s0
+    out   $s1, $zero, $imm, 16       # diskbuffer = s1
 
-    sub   $s0, $s0, $imm, 1            # i++
+    add   $t0, $zero, $imm, 1        # diskcmd = 1 (read)
+    out   $t0, $zero, $imm, 14       # issue read command
+
+    jal   $ra, $imm, $zero, POLL     # wait for disk to complete
+
+    bne   $imm, $s0, $zero, READ_SECTORS_LOOP  # repeat if more sectors to load
+
+# STAGE 2: Sum the buffers into RESULT_BUF
+# Using: $s0 = loop counter, $s1–$s2 = pointers to SECT0–SECT1, $a0–$a1 = pointers to SECT2–SECT3, $gp = result buffer
+#        $t0–$t2 = working registers
+
+    add   $s0, $zero, $imm, 128      # loop counter = 128 words
+    add   $s1, $zero, $imm, 1000     # s1 = SECT0_BUF
+    add   $s2, $zero, $imm, 1128     # s2 = SECT1_BUF
+    add   $a0, $zero, $imm, 1256     # a0 = SECT2_BUF
+    add   $a1, $zero, $imm, 1384     # a1 = SECT3_BUF
+    add   $gp, $zero, $imm, 1512     # gp = RESULT_BUF
+
+SUM_LOOP:
+    lw    $t0, $zero, $s1, 0         # t0 = mem[s1]
+    lw    $t1, $zero, $s2, 0         # t1 = mem[s2]
+    add   $t0, $t0, $t1, 0           # t0 += t1
+
+    lw    $t1, $zero, $a0, 0         # t1 = mem[a0]
+    add   $t0, $t0, $t1, 0           # t0 += t1
+
+    lw    $t1, $zero, $a1, 0         # t1 = mem[a1]
+    add   $t0, $t0, $t1, 0           # t0 += t1
+
+    sw    $t0, $gp, $zero, 0         # store to result buffer
+
+    sub   $s0, $s0, $imm, 1
     add   $s1, $s1, $imm, 1
     add   $s2, $s2, $imm, 1
-    add   $s3, $s3, $imm, 1
-    add   $s4, $s4, $imm, 1
-    add   $s5, $s5, $imm, 1
-    bne $imm, $s0, $zero, SUM_LOOP_LABEL   # while s0 != 0, repeat
+    add   $a0, $a0, $imm, 1
+    add   $a1, $a1, $imm, 1
+    add   $gp, $gp, $imm, 1
 
+    bne   $imm, $s0, $zero, SUM_LOOP
 
-    ### WRITE RESULT BUFFER to sector 4
+# STAGE 3: Write result to sector 4
 WRITE_RESULT:
-    jal   $ra, $imm, $zero, POLL_LABEL
-    add   $t1, $zero, $imm, NUM_OF_SECTORS_TO_TEST    #preset sector number : write the result to sector 4
-    out   $t1, $zero, $imm, DISKSECTOR_REG_ADDR        # set disksector ← 4
-    add   $t1, $zero, $imm, RESULT_BUF                  #preset
-    out   $t1, $zero, $imm, DISKBUFFER_REG_ADDR        # set diskbuffer ← 1512
-    add   $t1, $zero, $imm, DISK_CMD_WRITE          #preset write mode
-    out   $t1, $zero, $imm, DISKCMD_REG_ADDR        # set diskcmd ← WRITE (2)
-    jal   $ra, $imm, $zero, POLL_LABEL              # wait until done
+    jal   $ra, $imm, $zero, POLL
 
-    halt  $zero, $zero, $zero, 0      # finished !
+    add   $t0, $zero, $imm, 4        # sector 4
+    out   $t0, $zero, $imm, 15
 
-   ### POLL_LABEL: spin until diskstatus == 0
-POLL_LABEL:
-    in   $t6, $zero, $imm, DISKSTATUS_REG_ADDR   # t6 = diskstatus
-    beq  $imm, $t6, $zero, POLL_RETURN_LABEL           # if 0, disk is free → return
-    j    POLL_LABEL                              # else keep polling
-POLL_RETURN_LABEL:
-    jr   $ra                                      # back to caller
+    add   $t0, $zero, $imm, 1512     # result buffer
+    out   $t0, $zero, $imm, 16
+
+    add   $t0, $zero, $imm, 2        # diskcmd = 2 (write)
+    out   $t0, $zero, $imm, 14
+
+    jal   $ra, $imm, $zero, POLL
+
+    halt  $zero, $zero, $zero, 0     # done
+
+# POLL: Wait until diskstatus == 0
+POLL:
+    in    $t2, $zero, $imm, 17       # diskstatus
+    beq   $imm, $t2, $zero, POLL_DONE
+    beq   $imm, $zero, $zero, POLL
+POLL_DONE:
+    jal $zero, $ra, $zero, 0
