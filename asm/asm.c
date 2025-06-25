@@ -79,6 +79,10 @@ int convertToDecimal(const char* str) {
 
     return result; // Return the integer
 }
+// Helper to check if a string is a register name (starts with '$')
+static inline bool is_register_name(char* s) {
+    return s && s[0] == '$';
+}
 
 static inline void maybe_flush(int pc,
                                char *pending,
@@ -218,7 +222,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
     char* token1;
     char* token2;
     char* token3;
-    //char* token4; fixme probably not in need if so delete
+    char* token4;
     int pc = 0; //local program counter
 
     while (fgets(line, MAX_LINE_LENGTH, inputfp) != NULL) //itereation over the file till the end
@@ -248,7 +252,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         token1 = strtok(NULL, DELIMITER); //taking second token-will represent rd reg
         token2 = strtok(NULL, DELIMITER); //taking third token-will represent rs reg
         token3 = strtok(NULL, DELIMITER); //taking fourth token-will represent rt reg
-        //token4 = strtok(NULL, DELIMITER); //fixme probably not needed delete if so //taking fifth token-will represent const
+        token4 = strtok(NULL, DELIMITER); //fixme probably not needed delete if so //taking fifth token-will represent const
 
         inst.opcode = decode_opcode_die(token, pc);
 
@@ -288,7 +292,12 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
             (token2 && strcmp(token2,"$imm")==0) ||
             (token3 && strcmp(token3,"$imm")==0);
         if (uses_imm) {
-            int imm_value = decode_imm(token3, label_arr);
+            //int imm_value = decode_imm(token4, label_arr);
+
+            int imm_value = 0;
+            if (token4 != NULL && !is_register_name(token4)) {
+                imm_value = decode_imm(token4, label_arr);
+            }
 
             // Check range for 8-bit signed immediate: -128 ≤ x ≤ 127
             if (imm_value >= -128 && imm_value <= 127) {
@@ -373,6 +382,13 @@ int decode_imm(char* imm, label* labels) {
         if (strcmp(labels[i].name, imm) == 0) { // found label, return address
             return labels[i].line;
         }
+    }
+    printf("decode_imm: raw input = [%s]\n", imm);
+    
+    // Strip trailing newline
+    size_t len = strlen(imm);
+    if (len > 0 && imm[len - 1] == '\n') {
+        imm[len - 1] = '\0';
     }
     return strtol(imm, NULL, 0); // number
 
