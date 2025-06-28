@@ -55,54 +55,55 @@ typedef struct _instruction
     unsigned int rd : 4;
     unsigned int rs : 4;
     unsigned int rt : 4;
-    int          imm : 20;
-    bool i_type;
+    int          imm : 12;
+    uint32_t    bigimm;
+    bool i_type; // fixme this needs to change because this is old and maybe add bigimm bool instead
 } instruction;
 
 // Map opcode name to number 
 typedef enum _opcode {
-    ADD = 0,
-    SUB = 1,
-    MUL = 2,
-    AND = 3,
-    OR = 4,
-    XOR = 5,
-    SLL = 6,
-    SRA = 7,
-    SRL = 8,
-    BEQ = 9,
-    BNE = 10,
-    BLT = 11,
-    BGT = 12,
-    BLE = 13,
-    BGE = 14,
-    JAL = 15,
-    LW = 16,
-    SW = 17,
+    ADD  = 0,
+    SUB  = 1,
+    MUL  = 2,
+    AND  = 3,
+    OR   = 4,
+    XOR  = 5,
+    SLL  = 6,
+    SRA  = 7,
+    SRL  = 8,
+    BEQ  = 9,
+    BNE  = 10,
+    BLT  = 11,
+    BGT  = 12,
+    BLE  = 13,
+    BGE  = 14,
+    JAL  = 15,
+    LW   = 16,
+    SW   = 17,
     RETI = 18,
-    IN = 19,
-    OUT = 20,
+    IN   = 19,
+    OUT  = 20,
     HALT = 21,
 } opcode;
 
 // Map register name to number 
 typedef enum _reg {
     REG_ZERO = 0,
-    REG_IMM = 1,
-    REG_V0 = 2,
-    REG_A0 = 3,
-    REG_A1 = 4,
-    REG_A2 = 5,
-    REG_A3 = 6,
-    REG_T0 = 7,
-    REG_T1 = 8,
-    REG_T2 = 9,
-    REG_S0 = 10,
-    REG_S1 = 11,
-    REG_S2 = 12,
-    REG_GP = 13,
-    REG_SP = 14,
-    REG_RA = 15,
+    REG_IMM  = 1,
+    REG_V0   = 2,
+    REG_A0   = 3,
+    REG_A1   = 4,
+    REG_A2   = 5,
+    REG_A3   = 6,
+    REG_T0   = 7,
+    REG_T1   = 8,
+    REG_T2   = 9,
+    REG_S0   = 10,
+    REG_S1   = 11,
+    REG_S2   = 12,
+    REG_GP   = 13,
+    REG_SP   = 14,
+    REG_RA   = 15,
 } reg;
 
 // Map IO register name to number 
@@ -145,7 +146,7 @@ void load_data_from_input_file(simulator* simulator, FILE* fh, int type);
 // 2. Handle input files: load memory, load disk content, load irq2 times
 // 3. Initialize parameters and monitor to zero
 void init_simulator(simulator* simulator, char* memin_fp, char* diskin_fp, char* irq2in_fp);
-instruction* initialize_instruction(simulator* simulator);
+instruction* initialize_instruction(simulator* sim);
 
 // Run simulation:
 // 2. Run fetch-decode-execute loop

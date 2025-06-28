@@ -120,7 +120,7 @@ instruction* initialize_instruction(simulator* sim)
     // Instruction initialization
     if ((rt == REG_IMM) || (rd == REG_IMM) || (rs == REG_IMM))
     {
-        inst->i_type = true;
+        inst->i_type = true; //fixme - we need to use bigimm instead
         inst->imm = sim->memory[(sim->PC + 1)];
         sim->regs[REG_IMM] = (int32_t)inst->imm;
     }
@@ -149,7 +149,7 @@ void disk_cmd_handler(simulator* sim, instruction* inst)
 {
     sim->io_regs[IO_REG_DISK_CMD] = sim->regs[inst->rd];; // Set diskcmd to 1 for Reading and 2 for Writing
     sim->io_regs[IO_REG_DISK_STATUS] = 1; // Change status to busy 
-    sim->disk_dcnt = 1024; // Re-set counter to 1024
+    sim->disk_dcnt = DISK_RW_TIME; // Re-set counter to 1024
 }
 
 void disk_main_handler(simulator* sim)
@@ -229,7 +229,7 @@ void write_output_file_memout(simulator* simulator, char* memout_fp)
     FILE* memout_fh = open_file_to_write(memout_fp);
     for (int i = 0; i < MEMORY_SIZE; i++)
     {
-        fprintf(memout_fh, "%05X\n", simulator->memory[i]);
+        fprintf(memout_fh, "%05X\n", simulator->memory[i]); // fixme does it need to be 05 or 08??
     }
     fclose(memout_fh);
     return;
@@ -248,13 +248,13 @@ void write_output_file_regout(simulator* simulator, char* regout_fp)
 void write_output_file_trace(simulator* simulator, char* trace_fp, instruction* inst)
 {
     FILE* trace_fh = open_file_to_append(trace_fp);
-    unsigned int R1 = inst->i_type ? inst->imm : 0;
+    unsigned int R1 = inst->i_type ? inst->imm : 0; // fixme we dont have R commands!
 
     fprintf(trace_fh, "%03X %05X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X\n",
         simulator->PC,
         simulator->memory[simulator->PC],
         simulator->regs[0], // 8 zeros in R0 field ($zero is a protected register and will always hold 0)
-        R1, // if R-type 0x0, if I-type sign-extended imm 
+        R1, // if R-type 0x0, if I-type sign-extended imm //fixme probably needs removing //fixme - same! 
         simulator->regs[2],
         simulator->regs[3],
         simulator->regs[4],
@@ -363,8 +363,8 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         disk_main_handler(simulator); // IRQ1
         irq2(simulator);  // IRQ2
         irq = (simulator->io_regs[IO_REG_IRQ_0_ENABLE] && simulator->io_regs[IO_REG_IRQ_0_STATUS]) ||
-            (simulator->io_regs[IO_REG_IRQ_1_ENABLE] && simulator->io_regs[IO_REG_IRQ_1_STATUS]) ||
-            (simulator->io_regs[IO_REG_IRQ_2_ENABLE] && simulator->io_regs[IO_REG_IRQ_2_STATUS]);
+              (simulator->io_regs[IO_REG_IRQ_1_ENABLE] && simulator->io_regs[IO_REG_IRQ_1_STATUS]) ||
+              (simulator->io_regs[IO_REG_IRQ_2_ENABLE] && simulator->io_regs[IO_REG_IRQ_2_STATUS]);
 
         // Write trace.txt (before any changes to registers are done) 
         write_output_file_trace(simulator, trace_fp, inst); // Write registers to trace output file before executing the instruction
@@ -377,7 +377,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         if (invalid_write_attempt)
         {
             simulator->PC++; // Increase PC once done with an instruction execution
-            if (inst->i_type) simulator->PC++; // If the current instruction is I-type, increase the PC by 2
+            if (inst->i_type) simulator->PC++; // If the current instruction is I-type, increase the PC by 2 //fixme only in case of bigimm
             inc_clk(simulator); // Increase clock cycle count
             continue;
         }
@@ -544,7 +544,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         if (!branch_en)
         {
             simulator->PC++; // Increase PC once done with an instruction execution
-            if (inst->i_type) simulator->PC++; // If the current instruction is I-type, increase the PC by 2
+            if (inst->i_type) simulator->PC++; // If the current instruction is I-type, increase the PC by 2 //fixme bigimm not r type
         }
 
         // Check for & handle interrupts
