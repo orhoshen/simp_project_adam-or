@@ -229,7 +229,7 @@ void write_output_file_memout(simulator* simulator, char* memout_fp)
     FILE* memout_fh = open_file_to_write(memout_fp);
     for (int i = 0; i < MEMORY_SIZE; i++)
     {
-        fprintf(memout_fh, "%05X\n", simulator->memory[i]); // fixme does it need to be 05 or 08??
+        fprintf(memout_fh, "%08X\n", simulator->memory[i]); // fixme does it need to be 05 or 08??
     }
     fclose(memout_fh);
     return;
@@ -254,7 +254,7 @@ void write_output_file_trace(simulator* simulator, char* trace_fp, instruction* 
         simulator->PC,
         simulator->memory[simulator->PC],
         simulator->regs[0], // 8 zeros in R0 field ($zero is a protected register and will always hold 0)
-        R1, // if R-type 0x0, if I-type sign-extended imm //fixme probably needs removing //fixme - same! 
+        R1, // if R-type 0x0, if I-type sign-extended imm //fixme probably needs removing
         simulator->regs[2],
         simulator->regs[3],
         simulator->regs[4],
