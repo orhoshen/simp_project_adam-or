@@ -102,33 +102,27 @@ void init_simulator(simulator* simulator, char* memin_fp, char* diskin_fp, char*
 
 instruction* initialize_instruction(simulator* sim)
 {
+    uint32_t word = sim->memory[sim->PC]; //read instruction from memory
     instruction* inst = (instruction*)malloc(sizeof(instruction)); // Free in the end of each while loop interaction
-    unsigned int opcode = 0;
-    unsigned int rd = 0;
-    unsigned int rs = 0;
-    unsigned int rt = 0;
-    unsigned int instruction_line = sim->memory[sim->PC]; // Load current instruction based on current PC
-    // Isolate each instruction field using masking
-    rt = instruction_line & 0xF;
-    instruction_line = instruction_line >> 4;
-    rs = instruction_line & 0xF;
-    instruction_line = instruction_line >> 4;
-    rd = instruction_line & 0xF;
-    instruction_line = instruction_line >> 4;
-    opcode = instruction_line & 0xFF;
+
+    //parse line
+    inst->imm8     =  word        & 0xFF;          // bits 7:0
+    inst->bigimm   = (word >> 8 ) & 0x1;           // bit 8
+    inst->reserved = (word >> 9 ) & 0x7;           // bits 11:9
+    inst->rt       = (word >> 12) & 0xF;           // bits 15:12
+    inst->rs       = (word >> 16) & 0xF;           // bits 19:16
+    inst->rd       = (word >> 20) & 0xF;           // bits 23:20
+    inst->opcode   = (word >> 24) & 0xFF;          // bits 31:24
+
 
     // Instruction initialization
-    if ((rt == REG_IMM) || (rd == REG_IMM) || (rs == REG_IMM))
-    {
-        inst->i_type = true; //fixme - we need to use bigimm instead
-        inst->imm = sim->memory[(sim->PC + 1)];
-        sim->regs[REG_IMM] = (int32_t)inst->imm;
+    if (inst->bigimm) {
+        inst->imm32 = (int32_t)sim->memory[sim->PC + 1];
+    } else {
+        /* sign-extend 8-bit constant */
+        inst->imm32 = (int32_t)(int8_t)inst->imm8; //imm32 will always have the constant whether bigimm or not
     }
-    else inst->i_type = false;
-    inst->opcode = opcode;
-    inst->rd = rd;
-    inst->rt = rt;
-    inst->rs = rs;
+    sim->regs[REG_IMM] = inst->imm32;   // $imm always ready
     return inst;
 }
 
@@ -206,7 +200,7 @@ void timer(simulator* sim) // IRQ0 - Timer
             sim->io_regs[IO_REG_IRQ_0_STATUS] = 1; // IRQ0 is triggered
             sim->io_regs[IO_REG_TIMER_CURRENT] = 0;
         }
-        else sim->io_regs[IO_REG_TIMER_CURRENT]++;
+        sim->io_regs[IO_REG_TIMER_CURRENT]++; //increment regardless
     }
 }
 
@@ -248,13 +242,14 @@ void write_output_file_regout(simulator* simulator, char* regout_fp)
 void write_output_file_trace(simulator* simulator, char* trace_fp, instruction* inst)
 {
     FILE* trace_fh = open_file_to_append(trace_fp);
-    unsigned int R1 = inst->i_type ? inst->imm : 0; // fixme we dont have R commands!
+    unsigned int R1 = inst->imm32; //reminder imm32 is always set (whether bigimm or not)  
 
-    fprintf(trace_fh, "%03X %05X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X\n",
+    fprintf(trace_fh, "%u %03X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X\n", 
+        simulator->io_regs[IO_REG_CLKS], //clock
         simulator->PC,
         simulator->memory[simulator->PC],
         simulator->regs[0], // 8 zeros in R0 field ($zero is a protected register and will always hold 0)
-        R1, // if R-type 0x0, if I-type sign-extended imm //fixme probably needs removing
+        R1, // holds imm
         simulator->regs[2],
         simulator->regs[3],
         simulator->regs[4],
@@ -289,7 +284,7 @@ void write_output_file_diskout(simulator* simulator, char* diskout_fp)
     FILE* diskout_fh = open_file_to_write(diskout_fp);
     for (int i = 0; i < DISK_SIZE; i++)
     {
-        fprintf(diskout_fh, "%05X\n", simulator->disk[i]);
+        fprintf(diskout_fh, "%08X\n", simulator->disk[i]);
     }
     fclose(diskout_fh);
     return;
@@ -355,8 +350,8 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         int invalid_write_attempt = 0;
         branch_en = false;
 
-        // Fetch an instruction 
-        instruction* inst = initialize_instruction(simulator);
+        instruction* inst = initialize_instruction(simulator);         // Fetch an instruction and increase clock
+        inc_clk(simulator); // Increase clock cycle counter (done for every instruction)
 
         // Interrupts trigering
         timer(simulator); // IRQ0
@@ -370,15 +365,16 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         write_output_file_trace(simulator, trace_fp, inst); // Write registers to trace output file before executing the instruction
 
         // Protect $zero and $imm registers from writing 
-        invalid_write_attempt = (inst->rd == 0 || inst->rd == 1) &&
+        invalid_write_attempt = (inst->rd == REG_ZERO || inst->rd == REG_IMM) &&
             (inst->opcode == ADD || inst->opcode == SUB || inst->opcode == MUL || inst->opcode == AND || inst->opcode == OR || inst->opcode == XOR ||
                 inst->opcode == SLL || inst->opcode == SRA || inst->opcode == SRL || inst->opcode == JAL || inst->opcode == LW || inst->opcode == SW || inst->opcode == IN);
 
         if (invalid_write_attempt)
         {
-            simulator->PC++; // Increase PC once done with an instruction execution
-            if (inst->i_type) simulator->PC++; // If the current instruction is I-type, increase the PC by 2 //fixme only in case of bigimm
-            inc_clk(simulator); // Increase clock cycle count
+            //if (branch_en == false) { //fixme - is needed? (1)
+            //simulator->PC += 1 + inst->bigimm; // Increase PC once done with an instruction execution if bigimm increse by two
+            //} //fixme is needed? (2)
+            //inc_clk(simulator); // Increase clock cycle count 
             continue;
         }
 
@@ -405,20 +401,13 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             simulator->regs[inst->rd] = simulator->regs[inst->rs] ^ simulator->regs[inst->rt]; break;
         } // R[rd] = R[rs] XOR R[rt]
         case SLL: {
-            simulator->regs[inst->rd] = simulator->regs[inst->rs] << (simulator->regs[inst->rt]);
-            break;
+            simulator->regs[inst->rd] = simulator->regs[inst->rs] << (simulator->regs[inst->rt] & 0x1F); break;
         } // R[rd] = R[rs] SLL R[rt]
         case SRA: {
-            if (simulator->regs[inst->rt] < 0) {
-                simulator->regs[inst->rd] = (simulator->regs[inst->rs] >> simulator->regs[inst->rt]) | ~(~(0x0) >> simulator->regs[inst->rt]);
-            }
-            else {
-                simulator->regs[inst->rd] = (simulator->regs[inst->rs] >> simulator->regs[inst->rt]);
-            }
-            break;
+            simulator->regs[inst->rd] = (int32_t)simulator->regs[inst->rs] >> (simulator->regs[inst->rt] & 0x1F); break;
         } // R[rd] = R[rs] SRA R[rt]
         case SRL: {
-            simulator->regs[inst->rd] = (simulator->regs[inst->rs] >> simulator->regs[inst->rt]); break;
+            simulator->regs[inst->rd] = (simulator->regs[inst->rs] >> simulator->regs[inst->rt] & 0x1F); break;
         } // R[rd] = R[rs] SRL R[rt]
 
 // Branch commands: 
@@ -472,9 +461,9 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         } // if (R[rs] >= R[rt]) pc = R[rd]
     // Jump and link command:
         case JAL: {
-            simulator->regs[inst->rd] = simulator->PC + (inst->i_type == true) + 1; // R[rd] = next instruction address
+            simulator->regs[inst->rd] = simulator->PC + (inst->bigimm == 1) + 1; // R[rd] = next instruction address
             simulator->PC = simulator->regs[inst->rs]; //  pc = R[rs]
-            branch_en = true;
+            branch_en = true; // we always jump
             break;
         }
 
@@ -483,7 +472,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             simulator->regs[inst->rd] = simulator->memory[simulator->regs[inst->rs] + simulator->regs[inst->rt]]; break;
         } // R[rd] = MEM[R[rs]+R[rt]], with sign extension
         case SW: {
-            simulator->memory[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = (simulator->regs[inst->rd] & 0X000FFFFF); break;
+            simulator->memory[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = (simulator->regs[inst->rd]); break;
         } // MEM[R[rs]+R[rt]] = R[rd] (bits 19:0)
 
 //IRQ command:
@@ -512,6 +501,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             {
                 simulator->monitor[simulator->io_regs[IO_REG_MONITOR_ADDR]] = simulator->io_regs[IO_REG_MONITOR_DATA];
                 simulator->curr_monitor_index = simulator->io_regs[IO_REG_MONITOR_ADDR];
+                simulator->io_regs[IO_REG_MONITOR_CMD] = 0; // clear monitorcmd after writing
             }
 
             else {
@@ -537,15 +527,13 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             simulator->run_en = false; break;
         } // Halt execution, exit simulator
 
-        default:
-            break;
+        default:  break;
         } // End of switch(inst->opcode)
 
-        if (!branch_en)
-        {
-            simulator->PC++; // Increase PC once done with an instruction execution
-            if (inst->i_type) simulator->PC++; // If the current instruction is I-type, increase the PC by 2 //fixme bigimm not r type
-        }
+        simulator->regs[REG_ZERO] = 0;          // safegaurd zero is always zero
+        simulator->regs[REG_IMM ] = inst->imm32; // imm always mirrors current imm 
+
+        if (!branch_en) simulator->PC += 1 + inst->bigimm; // Increase PC once done with an instruction execution, if branch do not change PC!
 
         // Check for & handle interrupts
         if (irq && !simulator->handling_irq) // IRQ asserted and CPU is not handling another IRQ
@@ -554,7 +542,13 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             simulator->PC = simulator->io_regs[IO_REG_IRQ_HANDLER];// Change current PC to irq_handler
             simulator->handling_irq = true; // Assert irq handling flag
         }
-        inc_clk(simulator); // Increase clock cycle counter
+
+        if (inst->bigimm) {
+            inc_clk(simulator); //fixme: not sure about his line but pretty sure we need to take 2 clock cycles for bigimm instructions
+            timer(simulator); // IRQ0
+            disk_main_handler(simulator); // IRQ1
+            irq2(simulator);  // IRQ2
+        }
         free(inst);
     } // End of while(simulator->run_en)
 
