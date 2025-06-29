@@ -51,13 +51,14 @@ typedef enum _cmd_line_arg {
 
 typedef struct _instruction
 {
-    unsigned int opcode : 8;
-    unsigned int rd : 4;
-    unsigned int rs : 4;
-    unsigned int rt : 4;
-    int          imm : 12;
-    uint32_t    bigimm;
-    bool i_type; // fixme this needs to change because this is old and maybe add bigimm bool instead
+    uint8_t  opcode;      // 8 bits
+    uint8_t  rd   : 4;
+    uint8_t  rs   : 4;
+    uint8_t  rt   : 4;
+    uint8_t  reserved : 3; // always 0 in memory
+    uint8_t  bigimm   : 1;
+    uint8_t  imm8;        // 8 bits – meaningful only when bigimm == 0
+    int32_t  imm32;       // store sign-extended 32-bit constant here - meaningful only when bigimm == 1
 } instruction;
 
 // Map opcode name to number 
@@ -146,7 +147,7 @@ void load_data_from_input_file(simulator* simulator, FILE* fh, int type);
 // 2. Handle input files: load memory, load disk content, load irq2 times
 // 3. Initialize parameters and monitor to zero
 void init_simulator(simulator* simulator, char* memin_fp, char* diskin_fp, char* irq2in_fp);
-instruction* initialize_instruction(simulator* sim);
+instruction *initialize_instruction(simulator* sim);
 
 // Run simulation:
 // 2. Run fetch-decode-execute loop
