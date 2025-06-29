@@ -88,6 +88,8 @@ void init_simulator(simulator* simulator, char* memin_fp, char* diskin_fp, char*
     simulator->handling_irq = false;
     simulator->run_en = false;
     simulator->curr_monitor_index = 0;
+    simulator->pending_inst = NULL;
+    simulator->in_second_cycle_of_bigimm = false;
 
     // Load data from input files to simulator struct -> instructions from memin.txt, disk content from diskin.txt, cycles to raise irq2 from irq2in.txt
     load_data_from_input_file(simulator, memin_fh, 1);
@@ -105,7 +107,7 @@ instruction* initialize_instruction(simulator* sim)
     uint32_t word = sim->memory[sim->PC]; //read instruction from memory
     instruction* inst = (instruction*)malloc(sizeof(instruction)); // Free in the end of each while loop interaction
 
-    //parse line
+    //parse instruction
     inst->imm8     =  word        & 0xFF;          // bits 7:0
     inst->bigimm   = (word >> 8 ) & 0x1;           // bit 8
     inst->reserved = (word >> 9 ) & 0x7;           // bits 11:9
@@ -119,7 +121,7 @@ instruction* initialize_instruction(simulator* sim)
     if (inst->bigimm) {
         inst->imm32 = (int32_t)sim->memory[sim->PC + 1];
     } else {
-        /* sign-extend 8-bit constant */
+        // sign-extend 8-bit constant
         inst->imm32 = (int32_t)(int8_t)inst->imm8; //imm32 will always have the constant whether bigimm or not
     }
     sim->regs[REG_IMM] = inst->imm32;   // $imm always ready
@@ -165,11 +167,22 @@ void disk_main_handler(simulator* sim)
     }
 }
 
+static inline void mem_error(int addr, const char *what)
+{
+    fprintf(stderr,
+            "-MEMORY ERROR- %s address %d is outside legal range 0-%d\n",
+            what, addr, MEMORY_SIZE - 1);
+}
+
 void read_from_disk(simulator* sim)
 {
     int sector = sim->io_regs[IO_REG_DISK_SECTOR];
     int buffer = sim->io_regs[IO_REG_DISK_BUFFER];
 
+    if (buffer + DISK_SECTOR_SIZE - 1 >= MEMORY_SIZE) {
+        mem_error(buffer, "DMA READ base - tried to read from an address outside of bounds of memory");
+        return;
+    }
     for (int i = 0; i < DISK_SECTOR_SIZE; i++)
     {
         sim->memory[buffer + i] = sim->disk[DISK_SECTOR_SIZE * sector + i]; // DMA read
@@ -180,7 +193,11 @@ void write_to_disk(simulator* sim)
 {
     int sector = sim->io_regs[IO_REG_DISK_SECTOR];
     int buffer = sim->io_regs[IO_REG_DISK_BUFFER];
-
+    
+    if (buffer + DISK_SECTOR_SIZE - 1 >= MEMORY_SIZE) {
+        mem_error(buffer, "DMA WRITE base - tried to write to an address outside of bounds of memory");
+        return;
+    }
     for (int i = 0; i < DISK_SECTOR_SIZE; i++)
     {
         sim->disk[DISK_SECTOR_SIZE * sector + i] = sim->memory[buffer + i]; // DMA write
@@ -193,14 +210,15 @@ void write_to_disk(simulator* sim)
 
 void timer(simulator* sim) // IRQ0 - Timer 
 {
-    if (sim->io_regs[IO_REG_TIMER_ENABLE])
+    if (sim->io_regs[IO_REG_TIMER_ENABLE]) 
     {
         if (sim->io_regs[IO_REG_TIMER_CURRENT] == sim->io_regs[IO_REG_TIMER_MAX]) // If timer gets max value, reset it and assert IRQ0
         {
             sim->io_regs[IO_REG_IRQ_0_STATUS] = 1; // IRQ0 is triggered
             sim->io_regs[IO_REG_TIMER_CURRENT] = 0;
+        } else {
+            sim->io_regs[IO_REG_TIMER_CURRENT]++; //increment only if not maxed out
         }
-        sim->io_regs[IO_REG_TIMER_CURRENT]++; //increment regardless
     }
 }
 
@@ -349,9 +367,25 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
     {
         int invalid_write_attempt = 0;
         branch_en = false;
+        if (simulator->in_second_cycle_of_bigimm) {
+            simulator->in_second_cycle_of_bigimm = false;
+            inc_clk(simulator);  // tick #2            
+            timer(simulator);    //  IRQ0 after completing bigimm instruction        
+            disk_main_handler(simulator); //IRQ1
+            irq2(simulator); //IRQ2
+
+            write_output_file_trace(simulator, trace_fp, simulator->pending_inst);
+            free(simulator->pending_inst);
+            simulator->pending_inst = NULL;
+            continue;
+        }
 
         instruction* inst = initialize_instruction(simulator);         // Fetch an instruction and increase clock
         inc_clk(simulator); // Increase clock cycle counter (done for every instruction)
+
+        if (inst->bigimm && !simulator->handling_irq) {
+            simulator->in_second_cycle_of_bigimm = true;
+        }
 
         // Interrupts trigering
         timer(simulator); // IRQ0
@@ -361,8 +395,12 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
               (simulator->io_regs[IO_REG_IRQ_1_ENABLE] && simulator->io_regs[IO_REG_IRQ_1_STATUS]) ||
               (simulator->io_regs[IO_REG_IRQ_2_ENABLE] && simulator->io_regs[IO_REG_IRQ_2_STATUS]);
 
-        // Write trace.txt (before any changes to registers are done) 
-        write_output_file_trace(simulator, trace_fp, inst); // Write registers to trace output file before executing the instruction
+        // Write trace.txt (before any changes to registers are done)  for bigimm we delay trace to next cycle 
+        if (inst->bigimm)
+            simulator->pending_inst = inst;
+        else
+            write_output_file_trace(simulator, trace_fp, inst);
+
 
         // Protect $zero and $imm registers from writing 
         invalid_write_attempt = (inst->rd == REG_ZERO || inst->rd == REG_IMM) &&
@@ -375,6 +413,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             //simulator->PC += 1 + inst->bigimm; // Increase PC once done with an instruction execution if bigimm increse by two
             //} //fixme is needed? (2)
             //inc_clk(simulator); // Increase clock cycle count 
+            free(inst);
             continue;
         }
 
@@ -407,7 +446,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             simulator->regs[inst->rd] = (int32_t)simulator->regs[inst->rs] >> (simulator->regs[inst->rt] & 0x1F); break;
         } // R[rd] = R[rs] SRA R[rt]
         case SRL: {
-            simulator->regs[inst->rd] = (simulator->regs[inst->rs] >> simulator->regs[inst->rt] & 0x1F); break;
+            simulator->regs[inst->rd] = (simulator->regs[inst->rs] >> (simulator->regs[inst->rt] & 0x1F)); break;
         } // R[rd] = R[rs] SRL R[rt]
 
 // Branch commands: 
@@ -469,10 +508,22 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
 
                 // Memory commands:
         case LW: {
-            simulator->regs[inst->rd] = simulator->memory[simulator->regs[inst->rs] + simulator->regs[inst->rt]]; break;
+            int addr = simulator->regs[inst->rs] + simulator->regs[inst->rt];
+            if (addr >= MEMORY_SIZE || addr < 0) {
+                mem_error(addr, "LW tried to load a word that has illegal address");
+                break;
+            }
+            simulator->regs[inst->rd] = simulator->memory[addr];
+            break;
         } // R[rd] = MEM[R[rs]+R[rt]], with sign extension
         case SW: {
-            simulator->memory[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = (simulator->regs[inst->rd]); break;
+            int addr = simulator->regs[inst->rs] + simulator->regs[inst->rt];
+            if (addr >= MEMORY_SIZE || addr < 0) {
+                mem_error(addr, "SW - tried to store a word to an illegal address in memory");
+                break;
+            }
+            simulator->memory[addr] = simulator->regs[inst->rd];
+            break;
         } // MEM[R[rs]+R[rt]] = R[rd] (bits 19:0)
 
 //IRQ command:
@@ -542,14 +593,12 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             simulator->PC = simulator->io_regs[IO_REG_IRQ_HANDLER];// Change current PC to irq_handler
             simulator->handling_irq = true; // Assert irq handling flag
         }
-
-        if (inst->bigimm) {
-            inc_clk(simulator); //fixme: not sure about his line but pretty sure we need to take 2 clock cycles for bigimm instructions
-            timer(simulator); // IRQ0
-            disk_main_handler(simulator); // IRQ1
-            irq2(simulator);  // IRQ2
-        }
         free(inst);
+
+        if (!simulator->run_en && simulator->pending_inst) { //free up pending to avoid leaking
+            free(simulator->pending_inst);
+            simulator->pending_inst = NULL;
+        }
     } // End of while(simulator->run_en)
 
     // When the simulator stops running (after a halt instruction), write the rest of the output files (that aren't written during the simulator run)

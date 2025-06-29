@@ -31,6 +31,8 @@ typedef struct simulator {
     bool         handling_irq;
     bool         run_en;
     int          curr_monitor_index;
+    instruction* pending_inst;
+    bool    in_second_cycle_of_bigimm;  // Track if we're in second cycle
 } simulator;
 
 typedef enum _cmd_line_arg {
