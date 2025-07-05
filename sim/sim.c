@@ -241,7 +241,7 @@ void write_output_file_memout(simulator* simulator, char* memout_fp)
     FILE* memout_fh = open_file_to_write(memout_fp);
     for (int i = 0; i < MEMORY_SIZE; i++)
     {
-        fprintf(memout_fh, "%08X\n", simulator->memory[i]); // fixme does it need to be 05 or 08??
+        fprintf(memout_fh, "%08X\n", simulator->memory[i]); 
     }
     fclose(memout_fh);
     return;

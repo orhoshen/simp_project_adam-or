@@ -15,7 +15,7 @@ FILE* open_file_to_write(char* filePath)
 {
     FILE* fp = fopen(filePath, "w");
     if (fp == NULL) {
-        fprintf(stderr, "Error: Could not open file %s for writing.\n", filePath);
+        fprintf(stderr, "Error: Could not file %s for writing.\n", filePath);
         return NULL; // file is invalid
     }
     return fp;
@@ -253,7 +253,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         token1 = strtok(NULL, DELIMITER); //taking second token-will represent rd reg
         token2 = strtok(NULL, DELIMITER); //taking third token-will represent rs reg
         token3 = strtok(NULL, DELIMITER); //taking fourth token-will represent rt reg
-        token4 = strtok(NULL, DELIMITER); //fixme probably not needed delete if so //taking fifth token-will represent const
+        token4 = strtok(NULL, DELIMITER); //taking fifth token-will represent const
 
         inst.opcode = decode_opcode_die(token, pc);
 
@@ -264,7 +264,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
             int label_addr = decode_imm(token3, label_arr);
             inst.bigimm = 1;
             inst.imm8   = 0;
-            printf("Writing instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+            //printf("Writing instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
             write_i2memin(inst, outputfp, words, pc, label_addr);
             pc += 2;
             continue;
@@ -321,13 +321,13 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
             if (imm_value >= -128 && imm_value <= 127) {
                 inst.bigimm = 0;
                 inst.imm8 = (uint8_t)(imm_value & 0xFF);
-                printf("Writing instruction3: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+                //printf("Writing instruction3: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
                 write_i2memin(inst, outputfp, words, pc, imm_value);
                 pc += 1;
             } else { //requires second register
                 inst.bigimm = 1;
                 inst.imm8 = (uint8_t)(imm_value & 0xFF);
-                printf("Writing instruction4: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+                //printf("Writing instruction4: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
                 write_i2memin(inst, outputfp, words, pc, imm_value);
                 //fprintf(outputfp, "%08X\n", (uint32_t)imm_value);
                 pc += 2;
@@ -336,7 +336,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         else {
             inst.bigimm = 0;
             inst.imm8   = 0;
-            printf("Writing instruction5: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+            //printf("Writing instruction5: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
             write_i2memin(inst, outputfp, words, pc, 0);
             pc += 1;
         }
@@ -404,7 +404,7 @@ int decode_imm(char* imm, label* labels) {
             return labels[i].line;
         }
     }
-    printf("decode_imm: raw input = [%s]\n", imm);
+    //printf("decode_imm: raw input = [%s]\n", imm);
     
     // Strip trailing newline
     size_t len = strlen(imm);
@@ -425,7 +425,7 @@ void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc, int im
         (0           << 9 ) |   // reserved bits = 0
         (inst.bigimm << 8 ) |
         (inst.imm8   & 0xFF);   // force to 8 bits
-    printf("Encoded instruction at PC = %d: %08X\n", pc, encoded);
+    //printf("Encoded instruction at PC = %d: %08X\n", pc, encoded);
     fprintf(outputfp, "%08X\n", encoded);
 
     // Write second word only if bigimm == 1
