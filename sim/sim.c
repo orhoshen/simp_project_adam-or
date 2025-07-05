@@ -593,7 +593,8 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             simulator->PC = simulator->io_regs[IO_REG_IRQ_HANDLER];// Change current PC to irq_handler
             simulator->handling_irq = true; // Assert irq handling flag
         }
-        free(inst);
+        if (!inst->bigimm)
+            free(inst);
 
         if (!simulator->run_en && simulator->pending_inst) { //free up pending to avoid leaking
             free(simulator->pending_inst);

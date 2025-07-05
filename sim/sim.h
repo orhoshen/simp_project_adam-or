@@ -17,6 +17,19 @@
 #define DISK_SIZE (128*128)
 #define DISK_RW_TIME (1024) // Disk read/write time - 1024 clock cycles
 
+
+typedef struct _instruction
+{
+    uint8_t  opcode;      // 8 bits
+    uint8_t  rd   : 4;
+    uint8_t  rs   : 4;
+    uint8_t  rt   : 4;
+    uint8_t  reserved : 3; // always 0 in memory
+    uint8_t  bigimm   : 1;
+    uint8_t  imm8;        // 8 bits – meaningful only when bigimm == 0
+    int32_t  imm32;       // store sign-extended 32-bit constant here - meaningful only when bigimm == 1
+} instruction;
+
 // Simulator data & state
 typedef struct simulator {
     unsigned int PC;
@@ -50,18 +63,6 @@ typedef enum _cmd_line_arg {
     CMD_LINE_ARG_MONITOR = 12,
     CMD_LINE_ARG_MONITOR_YUV = 13,
 } cmd_line_arg;
-
-typedef struct _instruction
-{
-    uint8_t  opcode;      // 8 bits
-    uint8_t  rd   : 4;
-    uint8_t  rs   : 4;
-    uint8_t  rt   : 4;
-    uint8_t  reserved : 3; // always 0 in memory
-    uint8_t  bigimm   : 1;
-    uint8_t  imm8;        // 8 bits – meaningful only when bigimm == 0
-    int32_t  imm32;       // store sign-extended 32-bit constant here - meaningful only when bigimm == 1
-} instruction;
 
 // Map opcode name to number 
 typedef enum _opcode {

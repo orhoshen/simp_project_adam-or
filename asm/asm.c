@@ -229,14 +229,14 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
     {
         strip_comment(line); //remove everything after '#' in assembly line
 
-        instruction inst; //new instruction initialization
+        instruction inst = {0}; //new instruction initialization
         token = strtok(line, DELIMITER); //taking the first token of line, deciding what to do accordingly
         if (token == NULL || token[0] == '\n' || token[0] == '\0') continue; //empty line or comment - ignore
 
         if (words[pc].set == true) // If there is a word that should be written to this address -> write word's data
         {
             fprintf(outputfp, "%08X\n", words[pc].data);
-            words[pc].set = false;
+            //words[pc].set = false; fixme debugging memin not written
             continue;
         }
 
@@ -257,12 +257,13 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         inst.opcode = decode_opcode_die(token, pc);
 
         if (is_branch(token)) {
-            inst.rd = decode_reg_die(token1, pc);      //only in branch lines
-            inst.rs = decode_reg_die(token2, pc);
+            inst.rd   = 1;
+            inst.rs = decode_reg_die(token1, pc);      //only in branch lines
+            inst.rt = decode_reg_die(token2, pc);
             int label_addr = decode_imm(token3, label_arr);
-            inst.rd   = 1;          /* $imm holds target */
             inst.bigimm = 1;
             inst.imm8   = 0;
+            printf("Writing instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
             write_i2memin(inst, outputfp, words, pc, label_addr);
             pc += 2;
             continue;
@@ -277,7 +278,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
             inst.rt     = 0;
             inst.bigimm = 1;
             inst.imm8   = 0;
-
+            printf("Writing instruction2: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
             write_i2memin(inst, outputfp, words, pc, label_addr);
             pc += 2;
             continue;
@@ -303,11 +304,13 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
             if (imm_value >= -128 && imm_value <= 127) {
                 inst.bigimm = 0;
                 inst.imm8 = (uint8_t)(imm_value & 0xFF);
+                printf("Writing instruction3: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
                 write_i2memin(inst, outputfp, words, pc, imm_value);
                 pc += 1;
             } else { //requires second register
                 inst.bigimm = 1;
                 inst.imm8 = (uint8_t)(imm_value & 0xFF);
+                printf("Writing instruction4: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
                 write_i2memin(inst, outputfp, words, pc, imm_value);
                 //fprintf(outputfp, "%08X\n", (uint32_t)imm_value);
                 pc += 2;
@@ -316,6 +319,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         else {
             inst.bigimm = 0;
             inst.imm8   = 0;
+            printf("Writing instruction5: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
             write_i2memin(inst, outputfp, words, pc, 0);
             pc += 1;
         }
@@ -404,7 +408,7 @@ void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc, int im
         (0           << 9 ) |   // reserved bits = 0
         (inst.bigimm << 8 ) |
         (inst.imm8   & 0xFF);   // force to 8 bits
-
+    printf("Encoded instruction at PC = %d: %08X\n", pc, encoded);
     fprintf(outputfp, "%08X\n", encoded);
 
     // Write second word only if bigimm == 1
@@ -425,12 +429,12 @@ void write_rest_words(FILE* memin_fp, word* words, int pc) {
     {
         if (words[i].set == true)
         {
-            for (int j = temp; j + 1 < i; j++)
+            for (int j = temp; j < i; j++)
             {
                 fprintf(memin_fp, "%08X\n", 0x0);
             }
             fprintf(memin_fp, "%08X\n", words[i].data);
-            temp = i;
+            temp = i + 1;
         }
     }
 }
