@@ -236,7 +236,8 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         if (words[pc].set == true) // If there is a word that should be written to this address -> write word's data
         {
             fprintf(outputfp, "%08X\n", words[pc].data);
-            //words[pc].set = false; fixme debugging memin not written
+            words[pc].set = false; //clear it so it prints only once
+            pc++;
             continue;
         }
 
