@@ -269,18 +269,34 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
             continue;
         }
 
-        if (strcmp(token, "jal") == 0) //in case we need to jump to a label
-        {
-            int label_addr = decode_imm(token1, label_arr); 
+        if (strcmp(token, "jal") == 0) {
 
-            inst.rd     = 15;
-            inst.rs     = 0;
+            /* ---  case A :  jal  <LABEL> , $x , $y  ----------------- */
+            /*        target is a label  →  need big-imm 32-bit word    */
+            if (token1 && !is_register_name(token1)) {
+                int label_addr = decode_imm(token1, label_arr);
+
+                inst.rd     = 15;              /* link register  ($ra)  */
+                inst.rs     = 1;               /* $imm holds address    */
+                inst.rt     = 0;
+                inst.bigimm = 1;
+                inst.imm8   = 0;
+
+               write_i2memin(inst, outputfp, words, pc, label_addr);
+                pc += 2;
+                continue;
+            }
+
+            /* ---  case B :  jal  $rx , $y , $z  ---------------------- */
+            /*        target already in a register  →  single word      */
+            inst.rd     = 15;                          /* link → $ra    */
+            inst.rs     = decode_reg_die(token1, pc);  /* target reg    */
             inst.rt     = 0;
-            inst.bigimm = 1;
+            inst.bigimm = 0;
             inst.imm8   = 0;
-            printf("Writing instruction2: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
-            write_i2memin(inst, outputfp, words, pc, label_addr);
-            pc += 2;
+
+            write_i2memin(inst, outputfp, words, pc, 0);
+            pc += 1;
             continue;
         }
 
