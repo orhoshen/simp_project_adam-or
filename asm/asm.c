@@ -169,18 +169,16 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
                     if (*endptr == '\0' && val >= -128 && val <= 127)
                         bigimm = false;
                 }
-                pc += bigimm ? 2:1;
                 maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr);
+                pc += bigimm ? 2:1;
             }
             else 
             {
-                pc++; //for 1 line I instruction
                 maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr);
+                pc++; //for 1 line I instruction
             }
             continue;
         }
-    pc++; // ensure PC increases for valid lines that fall through
-    maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr);
     }
 }
 

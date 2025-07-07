@@ -451,13 +451,12 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
 
 // Branch commands: 
         case BEQ: {
-            if (simulator->regs[inst->rs] == simulator->regs[inst->rt])
-            {
-                simulator->PC = simulator->regs[inst->rd];
+            if (simulator->regs[inst->rs] == simulator->regs[inst->rt]) {
+                simulator->PC = (inst->rd == REG_IMM) ? inst->imm32 : simulator->regs[inst->rd];
                 branch_en = true;
             }
-            break;
-        } // if (R[rs] == R[rt]) pc = R[rd]
+        break;
+    }
         case BNE: {
             if (simulator->regs[inst->rs] != simulator->regs[inst->rt])
             {
