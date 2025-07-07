@@ -256,10 +256,10 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         inst.opcode = decode_opcode_die(token, pc);
 
         if (is_branch(token)) {
-            inst.rd   = 1;
-            inst.rs = decode_reg_die(token1, pc);      //only in branch lines
-            inst.rt = decode_reg_die(token2, pc);
-            int label_addr = decode_imm(token3, label_arr);
+            inst.rd = decode_reg_die(token1, pc);
+            inst.rs = decode_reg_die(token2, pc);      //only in branch lines
+            inst.rt = decode_reg_die(token3, pc);
+            int label_addr = decode_imm(token4, label_arr);
             inst.bigimm = 1;
             inst.imm8   = 0;
             //printf("Writing instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);

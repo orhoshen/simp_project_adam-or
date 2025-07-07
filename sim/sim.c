@@ -222,14 +222,15 @@ void timer(simulator* sim) // IRQ0 - Timer
     }
 }
 
-void irq2(simulator* sim) // IRQ2 - external file 
+void irq2(simulator* sim) // IRQ2 - external file
 {
-    if ((sim->io_regs[IO_REG_CLKS]) == sim->cycles_of_irq2[sim->current_irq2])
+    if (sim->io_regs[IO_REG_CLKS] == sim->cycles_of_irq2[sim->current_irq2])
     {
         sim->io_regs[IO_REG_IRQ_2_STATUS] = 1;
         sim->current_irq2++;
     }
-    else (sim->io_regs[IO_REG_IRQ_2_STATUS] = 0);
+    // REMOVED: else branch that was clearing the status bit
+    // The bit should stay high until software explicitly clears it
 }
 
 ////////////////////////////////////////////////////////////
@@ -262,7 +263,7 @@ void write_output_file_trace(simulator* simulator, char* trace_fp, instruction* 
     FILE* trace_fh = open_file_to_append(trace_fp);
     unsigned int R1 = inst->imm32; //reminder imm32 is always set (whether bigimm or not)  
 
-    fprintf(trace_fh, "%u %03X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X\n", 
+    fprintf(trace_fh, "%08X %03X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X\n", 
         simulator->io_regs[IO_REG_CLKS], //clock
         simulator->PC,
         simulator->memory[simulator->PC],
@@ -270,7 +271,7 @@ void write_output_file_trace(simulator* simulator, char* trace_fp, instruction* 
         R1, // holds imm
         simulator->regs[2],
         simulator->regs[3],
-        simulator->regs[4],
+        simulator->regs[4],+
         simulator->regs[5],
         simulator->regs[6],
         simulator->regs[7],
@@ -290,7 +291,7 @@ void write_output_file_trace(simulator* simulator, char* trace_fp, instruction* 
 void write_output_file_cycles(simulator* simulator, char* cycles_fp)
 {
     FILE* cycles_fh = open_file_to_write(cycles_fp);
-    fprintf(cycles_fh, "%u", simulator->io_regs[IO_REG_CLKS]);
+    fprintf(cycles_fh, "%08X", simulator->io_regs[IO_REG_CLKS]);
     fclose(cycles_fh);
     return;
 }
@@ -369,15 +370,20 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         branch_en = false;
         if (simulator->in_second_cycle_of_bigimm) {
             simulator->in_second_cycle_of_bigimm = false;
-            inc_clk(simulator);  // tick #2            
-            timer(simulator);    //  IRQ0 after completing bigimm instruction        
-            disk_main_handler(simulator); //IRQ1
-            irq2(simulator); //IRQ2
-
             write_output_file_trace(simulator, trace_fp, simulator->pending_inst);
-            free(simulator->pending_inst);
+
+            simulator->regs[REG_IMM] = simulator->pending_inst->imm32;
+
+            instruction* inst = simulator->pending_inst;
             simulator->pending_inst = NULL;
-            continue;
+
+            //inc_clk(simulator);  // tick #2            
+            //timer(simulator);    //  IRQ0 after completing bigimm instruction        
+            //disk_main_handler(simulator); //IRQ1
+            //irq2(simulator); //IRQ2
+            //free(simulator->pending_inst);
+            //simulator->pending_inst = NULL;
+            //continue; 
         }
 
         instruction* inst = initialize_instruction(simulator);         // Fetch an instruction and increase clock
@@ -414,7 +420,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             //} //fixme is needed? (2)
             //inc_clk(simulator); // Increase clock cycle count 
             free(inst);
-            continue;
+            //continue;
         }
 
         // Choose operation mode based on opcode
@@ -452,11 +458,11 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
 // Branch commands: 
         case BEQ: {
             if (simulator->regs[inst->rs] == simulator->regs[inst->rt]) {
-                simulator->PC = (inst->rd == REG_IMM) ? inst->imm32 : simulator->regs[inst->rd];
+                simulator->PC = simulator->regs[inst->rd];
                 branch_en = true;
             }
-        break;
-    }
+            break;
+        }
         case BNE: {
             if (simulator->regs[inst->rs] != simulator->regs[inst->rt])
             {
@@ -537,39 +543,46 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         case IN: {
             if ((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_MONITOR_CMD) { simulator->regs[inst->rd] = 0; }  // Reading from monitorcmd register will return 0
             else simulator->regs[inst->rd] = simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]];        // R[rd] = IORegister[R[rs] + R[rt]]
-            fprintf(hwregtrace_fh, "%d READ %s %08X\n", simulator->io_regs[IO_REG_CLKS], io_names[simulator->regs[inst->rs] + simulator->regs[inst->rt]], simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]]);
+            fprintf(hwregtrace_fh, "%08X READ %s %08X\n", simulator->io_regs[IO_REG_CLKS], io_names[simulator->regs[inst->rs] + simulator->regs[inst->rt]], simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]]);
             break;
         }
 
         case OUT: {
-            if (((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_DISK_CMD) && (!simulator->io_regs[IO_REG_DISK_STATUS])) // Handle Disk R/W command only if disk status is 0
+            if (((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_DISK_CMD) && (!simulator->io_regs[IO_REG_DISK_STATUS])) // Handle Disk R/W command only if disk status
             {
                 disk_cmd_handler(simulator, inst);
             }
-
-            else if (((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_MONITOR_CMD) && (simulator->regs[inst->rd])) // If instruction writes 1 to monitorcmd, update relevant pixel
+    
+            else if (((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_MONITOR_CMD) && (simulator->regs[inst->rd])) // If instruction writes 1 to monitorcmd, update rele
             {
                 simulator->monitor[simulator->io_regs[IO_REG_MONITOR_ADDR]] = simulator->io_regs[IO_REG_MONITOR_DATA];
                 simulator->curr_monitor_index = simulator->io_regs[IO_REG_MONITOR_ADDR];
                 simulator->io_regs[IO_REG_MONITOR_CMD] = 0; // clear monitorcmd after writing
             }
-
+    
             else {
-
-                if (((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_LEDS) && (simulator->regs[inst->rd] != simulator->io_regs[IO_REG_LEDS])) // If leds are changed, update leds output file
-                {
-                    simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = simulator->regs[inst->rd]; // IORegister [R[rs]+R[rt]] = R[rd]
-                    fprintf(leds_fh, "%d %08X\n", simulator->io_regs[IO_REG_CLKS], simulator->io_regs[IO_REG_LEDS]);
+                // Check if LEDs value is changing
+                if (((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_LEDS) && 
+                    (simulator->regs[inst->rd] != simulator->io_regs[IO_REG_LEDS])) 
+                {   
+                    simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = simulator->regs[inst->rd];
+                    fprintf(leds_fh, "%08X %08X\n", simulator->io_regs[IO_REG_CLKS], simulator->io_regs[IO_REG_LEDS]);
                 }
-                if (((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_DISPLAY_7_SEG) && (simulator->regs[inst->rd] != simulator->io_regs[IO_REG_DISPLAY_7_SEG])) // If seg diaplay is changed, update display7seg output file
+                // Check if Display7seg value is changing
+                else if (((simulator->regs[inst->rs] + simulator->regs[inst->rt]) == IO_REG_DISPLAY_7_SEG) && 
+                        (simulator->regs[inst->rd] != simulator->io_regs[IO_REG_DISPLAY_7_SEG])) 
                 {
-                    simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = simulator->regs[inst->rd]; // IORegister [R[rs]+R[rt]] = R[rd]
-                    fprintf(display7seg_fh, "%d %08X\n", simulator->io_regs[IO_REG_CLKS], simulator->io_regs[IO_REG_DISPLAY_7_SEG]);
+                    simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = simulator->regs[inst->rd];
+                    fprintf(display7seg_fh, "%08X %08X\n", simulator->io_regs[IO_REG_CLKS], simulator->io_regs[IO_REG_DISPLAY_7_SEG]);
                 }
-                simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = simulator->regs[inst->rd]; // IORegister [R[rs]+R[rt]] = R[rd]
-            } // End of else - main writing
-
-            fprintf(hwregtrace_fh, "%d WRITE %s %08X\n", simulator->io_regs[IO_REG_CLKS], io_names[simulator->regs[inst->rs] + simulator->regs[inst->rt]], simulator->regs[inst->rd]);
+                // For all other IO registers, just write without logging
+                else 
+                {
+                    simulator->io_regs[simulator->regs[inst->rs] + simulator->regs[inst->rt]] = simulator->regs[inst->rd];
+                }
+            }
+    
+            fprintf(hwregtrace_fh, "%08X WRITE %s %08X\n", simulator->io_regs[IO_REG_CLKS], io_names[simulator->regs[inst->rs] + simulator->regs[inst->rt]], simulator->regs[inst->rd]);
             break;
         }
 

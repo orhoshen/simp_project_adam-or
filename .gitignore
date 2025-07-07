@@ -1,0 +1,24 @@
+*.exe
+*.txt
+*.yuv
+*.DS_Store
+# build artifacts
+*.exe
+# run-time outputs & traces
+*.txt
+*.yuv
+# but keep the mandatory test inputs ─ we’ll “un-ignore” them next
+!*/diskin.txt
+!*/irq2in.txt
+# OS cruft
+.DS_Store
+# build artefacts
+*.exe
+# run-time outputs
+*.txt
+*.yuv
+# but keep the required static inputs
+!*/diskin.txt
+!*/irq2in.txt
+# OS cruft
+.DS_Store
