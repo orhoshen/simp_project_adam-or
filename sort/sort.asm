@@ -10,7 +10,7 @@
 
         add  $s0, $zero, $imm, 0x100     # base address 0x100
         add  $a0, $zero, $imm, 15
-		add  $a1, $zero, $imm, 9         # $a1 = 9  (I/O reg leds)        # constant 15
+	add  $a1, $zero, $imm, 9         # $a1 = 9  (I/O reg leds)        # constant 15
         add  $t0, $zero, $imm, 0         # i = 0
 
 # ---------- outer loop ------------------------------------------------
@@ -49,10 +49,10 @@ INC_I:  add  $t0,  $t0,  $imm, 1         # i++
 
 # ---------- finished --------------------------------------------------
 END:    
-		add  $t2, $zero, $imm, 10           # $t2 = 10  (I/O reg display7seg)
+        add  $t2, $zero, $imm, 10           # $t2 = 10  (I/O reg display7seg)
        	add  $a0, $zero, $imm, 0xDEADBEEF   # pattern 0xDEADBEEF
        	out  $a0,  $t2,  $zero, 0           # display7seg = pattern
-		halt $zero, $zero, $zero, 0
+	halt $zero, $zero, $zero, 0
 
 # ---------- test data (MEM[0x100-0x10F]) -----------------------------
         .word 256 7
