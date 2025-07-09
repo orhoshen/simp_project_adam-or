@@ -143,7 +143,7 @@ void inc_clk(simulator* sim)
 
 void disk_cmd_handler(simulator* sim, instruction* inst)
 {
-    sim->io_regs[IO_REG_DISK_CMD] = sim->regs[inst->rd];; // Set diskcmd to 1 for Reading and 2 for Writing
+    sim->io_regs[IO_REG_DISK_CMD] = sim->regs[inst->rd]; // Set diskcmd to 1 for Reading and 2 for Writing
     sim->io_regs[IO_REG_DISK_STATUS] = 1; // Change status to busy 
     sim->disk_dcnt = DISK_RW_TIME; // Re-set counter to 1024
 }
@@ -208,7 +208,7 @@ void write_to_disk(simulator* sim)
 //////// IRQ HANDLING FUNCTIONS  
 ///////////////////////////////////////////////////////////
 
-void timer(simulator* sim) // IRQ0 - Timer 
+void timer(simulator* sim) // IRQ0 - Timer
 {
     if (sim->io_regs[IO_REG_TIMER_ENABLE]) 
     {
@@ -229,7 +229,7 @@ void irq2(simulator* sim) // IRQ2 - external file
         sim->io_regs[IO_REG_IRQ_2_STATUS] = 1;
         sim->current_irq2++;
     }
-    // REMOVED: else branch that was clearing the status bit
+    // REMOVED: else branch that was clearing the status bit 
     // The bit should stay high until software explicitly clears it
 }
 
@@ -252,7 +252,7 @@ void write_output_file_regout(simulator* simulator, char* regout_fp)
 {
     FILE* regout_fh = open_file_to_write(regout_fp);
     for (int i = 2; i < NUMBER_OF_REGS; i++) {
-        fprintf(regout_fh, "%08X\n", simulator->regs[i]);
+        fprintf(regout_fh, "0x%08X, decimal: %08d\n", simulator->regs[i], simulator->regs[i]); //fixme print only hexa without 0x. i.e. remove decimal and 0x
     }
     fclose(regout_fh);
     return;
@@ -271,7 +271,7 @@ void write_output_file_trace(simulator* simulator, char* trace_fp, instruction* 
         R1, // holds imm
         simulator->regs[2],
         simulator->regs[3],
-        simulator->regs[4],+
+        simulator->regs[4],
         simulator->regs[5],
         simulator->regs[6],
         simulator->regs[7],
@@ -358,7 +358,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
     FILE* display7seg_fh = open_file_to_write(display7seg_fp);
     // Initialize trace file 
     FILE* trace_fh = open_file_to_write(trace_fp);
-    fclose(trace_fh);
+    fclose(trace_fh); //fixme - why is this here? is it needed?
     // IO names pattern
     const char* io_names[] = { "irq0enable", "irq1enable", "irq2enable", "irq0status", "irq1status", "irq2status", "irqhandler", "irqreturn", "clks", "leds", "display7seg",
                               "timerenable", "timercurrent", "timermax", "diskcmd", "disksector", "diskbuffer", "diskstatus", "reserved", "reserved", "monitoraddr", "monitordata", "monitorcmd" };
@@ -377,13 +377,14 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             instruction* inst = simulator->pending_inst;
             simulator->pending_inst = NULL;
 
-            //inc_clk(simulator);  // tick #2            
-            //timer(simulator);    //  IRQ0 after completing bigimm instruction        
-            //disk_main_handler(simulator); //IRQ1
-            //irq2(simulator); //IRQ2
+            inc_clk(simulator);  // tick #2            
+            timer(simulator);    //  IRQ0 after completing bigimm instruction        
+            disk_main_handler(simulator); //IRQ1 //fixme we clearly have a problem with how writing to a disk is done. is it too much intertwined with the interrupt? 
+            irq2(simulator); //IRQ2
+            free(inst);
             //free(simulator->pending_inst);
             //simulator->pending_inst = NULL;
-            //continue; 
+            continue; 
         }
 
         instruction* inst = initialize_instruction(simulator);         // Fetch an instruction and increase clock
@@ -393,7 +394,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
             simulator->in_second_cycle_of_bigimm = true;
         }
 
-        // Interrupts trigering
+        // Interrupts trigering // fixme - mabe remove this part above the in_second_cycle_of_bigimm evaluation?
         timer(simulator); // IRQ0
         disk_main_handler(simulator); // IRQ1
         irq2(simulator);  // IRQ2
@@ -411,18 +412,17 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         // Protect $zero and $imm registers from writing 
         invalid_write_attempt = (inst->rd == REG_ZERO || inst->rd == REG_IMM) &&
             (inst->opcode == ADD || inst->opcode == SUB || inst->opcode == MUL || inst->opcode == AND || inst->opcode == OR || inst->opcode == XOR ||
-                inst->opcode == SLL || inst->opcode == SRA || inst->opcode == SRL || inst->opcode == JAL || inst->opcode == LW || inst->opcode == SW || inst->opcode == IN);
+                inst->opcode == SLL || inst->opcode == SRA || inst->opcode == SRL || /* fixme possibly bug here: inst->opcode == JAL || */  inst->opcode == LW || inst->opcode == SW || inst->opcode == IN);
 
-        if (invalid_write_attempt)
+        if (invalid_write_attempt)  //maybe this too should be above evaluation of in_second_cycle_of_bigimm - theoretically if this operation was bigimm but was illegal we woudn't want to process the second register
         {
             //if (branch_en == false) { //fixme - is needed? (1)
             //simulator->PC += 1 + inst->bigimm; // Increase PC once done with an instruction execution if bigimm increse by two
             //} //fixme is needed? (2)
-            //inc_clk(simulator); // Increase clock cycle count 
+            inc_clk(simulator); // Increase clock cycle count 
             free(inst);
-            //continue;
+            continue;
         }
-
         // Choose operation mode based on opcode
         switch (inst->opcode) {
 
@@ -505,9 +505,10 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         } // if (R[rs] >= R[rt]) pc = R[rd]
     // Jump and link command:
         case JAL: {
+            printf("[JAL] PC=%d, writing return=%d to reg %d, jumping to %d\n", simulator->PC, simulator->PC + (inst->bigimm == 1) + 1, inst->rd, simulator->regs[inst->rs]); //fixme print
             simulator->regs[inst->rd] = simulator->PC + (inst->bigimm == 1) + 1; // R[rd] = next instruction address
             simulator->PC = simulator->regs[inst->rs]; //  pc = R[rs]
-            branch_en = true; // we always jump
+            branch_en = true; // we always jump //fixme??? is this a branch? could be a bug
             break;
         }
 

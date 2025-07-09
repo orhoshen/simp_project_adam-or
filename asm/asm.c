@@ -107,7 +107,7 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
     char pending_label[MAX_LABEL_LENGTH] = {0}; //to deal with lines with label & instruction
     bool has_pending = false; //to deal with lines with label & instruction
 
-    //read assembly lines in order to detect LABELS
+    //read assembly lines in order to detect LABELS and words
     while (fgets(line, MAX_LINE_LENGTH, fp) != NULL) //itereation over the file till the end
     {
         strip_comment(line);
@@ -129,7 +129,7 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
 
             // Label scaning
             token_len = (int)strlen(token);
-            if (contains_label(token, token_len))
+            if (contains_label(token, token_len)) //first token is label
             {
                 /* remember the label text but DON’T set it yet */
                 token[token_len - 1] = '\0';         
@@ -157,8 +157,7 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
             bool uses_imm = (strcmp(token_rd, "$imm") == 0) ||
                             (strcmp(token_rs, "$imm") == 0) ||
                             (strcmp(token_rt, "$imm") == 0) ||
-                            is_branch(token) ||
-                            (strcmp(token, "jal") == 0);
+                            is_branch(token) ; 
             if (uses_imm)
             {
                 bool bigimm = true;
@@ -169,12 +168,12 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
                     if (*endptr == '\0' && val >= -128 && val <= 127)
                         bigimm = false;
                 }
-                maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr);
+                maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr); //setting label in imm
                 pc += bigimm ? 2:1;
             }
             else 
             {
-                maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr);
+                maybe_flush(pc, pending_label, &has_pending, &local_index, label_arr); //setting label in imm
                 pc++; //for 1 line I instruction
             }
             continue;
@@ -191,7 +190,7 @@ bool is_branch(char* opcode) {
            strcmp(opcode, "bge") == 0;
 }
 
-static inline int decode_opcode_die(char *opc, int pc)
+static inline int decode_opcode_wrapper(char *opc, int pc)
 {
     int code = decode_opcode(opc);
     if (code == -1) {
@@ -201,12 +200,12 @@ static inline int decode_opcode_die(char *opc, int pc)
     return code;
 }
 
-static inline int decode_reg_die(char *reg, int pc)
+static inline int decode_reg_wrapper(char *reg, int pc)
 {
-    if (reg == NULL) return 0;            /* caller decides if NULL legal   */
+    //if (reg == NULL) return 0;            /* caller decides if NULL legal   */
     int r = decode_register(reg);
-    if (r == -1) {
-        fprintf(stderr, "Error: unknown register '%s' at PC %d\n", reg, pc);
+    if (reg == NULL || r == -1) {
+        fprintf(stderr, "Error: unknown or NULL register '%s' at PC %d\n", reg, pc);
         exit(1);
     }
     return r;
@@ -244,7 +243,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         if (contains_label(token, (int)strlen(token))) // we have a label
         {
             token = strtok(NULL, DELIMITER); //taking the first real token 
-            if (token == NULL) continue; // only label in line, else we just continue normally
+            if (token == NULL) continue; // only label in line, else we just continue normally //fixme - should we advance pc here or not?
         }
 
         // Handling assembly - regular commands
@@ -253,55 +252,50 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         token3 = strtok(NULL, DELIMITER); //taking fourth token-will represent rt reg
         token4 = strtok(NULL, DELIMITER); //taking fifth token-will represent const
 
-        inst.opcode = decode_opcode_die(token, pc);
+        inst.opcode = decode_opcode_wrapper(token, pc);
 
         if (is_branch(token)) {
-            inst.rd = decode_reg_die(token1, pc);
-            inst.rs = decode_reg_die(token2, pc);      //only in branch lines
-            inst.rt = decode_reg_die(token3, pc);
+            inst.rd = decode_reg_wrapper(token1, pc);
+            inst.rs = decode_reg_wrapper(token2, pc);      //only in branch lines
+            inst.rt = decode_reg_wrapper(token3, pc);
             int label_addr = decode_imm(token4, label_arr);
             inst.bigimm = 1;
             inst.imm8   = 0;
-            //printf("Writing instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
-            write_i2memin(inst, outputfp, words, pc, label_addr);
+            printf("Writing branch instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+            write_memin(inst, outputfp, words, pc, label_addr);
             pc += 2;
             continue;
         }
 
         if (strcmp(token, "jal") == 0) {
 
-            /* ---  case A :  jal  <LABEL> , $x , $y  ----------------- */
-            /*        target is a label  →  need big-imm 32-bit word    */
-            if (token1 && !is_register_name(token1)) {
-                int label_addr = decode_imm(token1, label_arr);
-
-                inst.rd     = 15;              /* link register  ($ra)  */
-                inst.rs     = 1;               /* $imm holds address    */
-                inst.rt     = 0;
+            inst.rd = decode_reg_wrapper(token1, pc);   // caller’s rd
+            // ---- jump-via-imm (bigimm == 1) ----------------------- 
+            if (token2 && strcmp(token2, "$imm") == 0) {
+                inst.rs     = 1;                          // $imm      
+                inst.rt     = decode_reg_wrapper(token3, pc); // 3rd op    
                 inst.bigimm = 1;
                 inst.imm8   = 0;
 
-               write_i2memin(inst, outputfp, words, pc, label_addr);
+                int target  = decode_imm(token4, label_arr); // label/num
+                write_memin(inst, outputfp, words, pc, target);
                 pc += 2;
-                continue;
             }
-
-            /* ---  case B :  jal  $rx , $y , $z  ---------------------- */
-            /*        target already in a register  →  single word      */
-            inst.rd     = 15;                          /* link → $ra    */
-            inst.rs     = decode_reg_die(token1, pc);  /* target reg    */
-            inst.rt     = 0;
-            inst.bigimm = 0;
-            inst.imm8   = 0;
-
-            write_i2memin(inst, outputfp, words, pc, 0);
-            pc += 1;
+            // ---- jump-via-register (single 32-bit word) ------------ 
+            else {
+                inst.rs     = decode_reg_wrapper(token2, pc);  // target reg
+                inst.rt     = decode_reg_wrapper(token3, pc);
+                inst.bigimm = 0;
+                inst.imm8   = 0;
+                write_memin(inst, outputfp, words, pc, 0);
+                pc += 1;
+            }
             continue;
         }
 
-        inst.rd = decode_reg_die(token1, pc);
-        inst.rs = decode_reg_die(token2, pc);
-        inst.rt = decode_reg_die(token3, pc);
+        inst.rd = decode_reg_wrapper(token1, pc);
+        inst.rs = decode_reg_wrapper(token2, pc);
+        inst.rt = decode_reg_wrapper(token3, pc);
 
         bool uses_imm =
             (token1 && strcmp(token1,"$imm")==0) ||
@@ -319,23 +313,19 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
             if (imm_value >= -128 && imm_value <= 127) {
                 inst.bigimm = 0;
                 inst.imm8 = (uint8_t)(imm_value & 0xFF);
-                //printf("Writing instruction3: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
-                write_i2memin(inst, outputfp, words, pc, imm_value);
+                write_memin(inst, outputfp, words, pc, imm_value);
                 pc += 1;
             } else { //requires second register
                 inst.bigimm = 1;
                 inst.imm8 = (uint8_t)(imm_value & 0xFF);
-                //printf("Writing instruction4: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
-                write_i2memin(inst, outputfp, words, pc, imm_value);
-                //fprintf(outputfp, "%08X\n", (uint32_t)imm_value);
+                write_memin(inst, outputfp, words, pc, imm_value);
                 pc += 2;
             }
         }
-        else {
+        else { //no imm
             inst.bigimm = 0;
             inst.imm8   = 0;
-            //printf("Writing instruction5: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
-            write_i2memin(inst, outputfp, words, pc, 0);
+            write_memin(inst, outputfp, words, pc, 0);
             pc += 1;
         }
 
@@ -403,7 +393,7 @@ int decode_imm(char* imm, label* labels) {
         }
     }
     //printf("decode_imm: raw input = [%s]\n", imm);
-    
+    //printf("[decode_imm] Label '%s' not found, defaulting to numeric conversion (may be an error!)\n", imm); //fixme
     // Strip trailing newline
     size_t len = strlen(imm);
     if (len > 0 && imm[len - 1] == '\n') {
@@ -413,7 +403,7 @@ int decode_imm(char* imm, label* labels) {
 
 }
 
-void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc, int imm_value) {
+void write_memin(instruction inst, FILE* outputfp, word* words, int pc, int imm_value) {
     // Build the full 32-bit instruction word
     uint32_t encoded =
         (inst.opcode << 24) |
@@ -423,7 +413,6 @@ void write_i2memin(instruction inst, FILE* outputfp, word* words, int pc, int im
         (0           << 9 ) |   // reserved bits = 0
         (inst.bigimm << 8 ) |
         (inst.imm8   & 0xFF);   // force to 8 bits
-    //printf("Encoded instruction at PC = %d: %08X\n", pc, encoded);
     fprintf(outputfp, "%08X\n", encoded);
 
     // Write second word only if bigimm == 1
@@ -472,9 +461,11 @@ int main(int argc, char* argv[])
     memset(words,  0, sizeof(words));
 
     parse_lines(assembly_fp, labels, words);
-    for (int i = 0; i < MAX_NUMBER_OF_LABELS && labels[i].set; i++) {
-        printf("Label '%s' is at PC = %d\n", labels[i].name, labels[i].line);
-    }
+
+    //for (int i = 0; i < MAX_NUMBER_OF_LABELS && labels[i].set; i++) {
+    //    printf("Label '%s' is at PC = %d\n", labels[i].name, labels[i].line);
+    //}
+
     fclose(assembly_fp);
 
     FILE* assembly_fp1 = open_file_to_read(argv[1]);

@@ -60,7 +60,7 @@ int   decode_opcode  (char *opc);
 int   decode_register(char *reg);
 int   decode_imm     (char *imm, label *tbl);
 
-void  write_i2memin   (instruction inst, FILE *out, word *words,
+void  write_memin   (instruction inst, FILE *out, word *words,
                        int pc, int imm32);
 void  write_rest_words(FILE *out, word *words, int pc);
 

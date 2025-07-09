@@ -22,3 +22,6 @@
 !*/irq2in.txt
 # OS cruft
 .DS_Store
+asm/my_asm
+sim/my_sim
+dump_results/

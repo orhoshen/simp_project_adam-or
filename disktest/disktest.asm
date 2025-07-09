@@ -37,13 +37,15 @@ READ_SECTORS_LOOP:
     add   $t0, $zero, $imm, 1        # diskcmd = 1 (read)
     out   $t0, $zero, $imm, 14       # issue read command
 
-    jal   $ra, $imm, $zero, POLL     # wait for disk to complete
+    #jal   $ra, $imm, $zero, POLL     # wait for disk to be free
 
     bne   $imm, $s0, $zero, READ_SECTORS_LOOP  # repeat if more sectors to load
 
 # STAGE 2: Sum the buffers into RESULT_BUF
 # Using: $s0 = loop counter, $s1–$s2 = pointers to SECT0–SECT1, $a0–$a1 = pointers to SECT2–SECT3, $gp = result buffer
 #        $t0–$t2 = working registers
+
+    jal   $ra, $imm, $zero, POLL     # wait for disk to be free
 
     add   $s0, $zero, $imm, 128      # loop counter = 128 words
     add   $s1, $zero, $imm, 1000     # s1 = SECT0_BUF
@@ -76,7 +78,7 @@ SUM_LOOP:
 
 # STAGE 3: Write result to sector 4
 WRITE_RESULT:
-    jal   $ra, $imm, $zero, POLL
+    jal   $ra, $imm, $zero, POLL     # wait for disk to be free
 
     add   $t0, $zero, $imm, 4        # sector 4
     out   $t0, $zero, $imm, 15
@@ -87,14 +89,14 @@ WRITE_RESULT:
     add   $t0, $zero, $imm, 2        # diskcmd = 2 (write)
     out   $t0, $zero, $imm, 14
 
-    jal   $ra, $imm, $zero, POLL
+    jal   $ra, $imm, $zero, POLL    #wait until write completes
 
     halt  $zero, $zero, $zero, 0     # done
 
 # POLL: Wait until diskstatus == 0
 POLL:
-    in    $t2, $zero, $imm, 17       # diskstatus
-    beq   $imm, $t2, $zero, POLL_DONE
+    in    $v0, $zero, $imm, 17
+    beq   $imm, $v0, $zero, POLL_DONE
     beq   $imm, $zero, $zero, POLL
 POLL_DONE:
     jal $zero, $ra, $zero, 0
