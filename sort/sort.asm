@@ -54,19 +54,19 @@ END:
 	halt $zero, $zero, $zero, 0
 
 # ---------- test data (MEM[0x100-0x10F]) -----------------------------
-        .word 256 7
-        .word 257 16
-        .word 258 4
-        .word 259 8
-        .word 260 20
-        .word 261 1
-        .word 262 6
-        .word 263 2
-        .word 264 3
-        .word 265 8
-        .word 266 5
-        .word 267 4
-        .word 268 11
-        .word 269 9
-        .word 270 30
-        .word 271 25
+        #.word 256 7
+        #.word 257 16
+        #.word 258 4
+        #.word 259 8
+        #.word 260 20
+        #.word 261 1
+        #.word 262 6
+        #.word 263 2
+        #.word 264 3
+        #.word 265 8
+        #.word 266 5
+        #.word 267 4
+        #.word 268 11
+        #.word 269 9
+        #.word 270 30
+        #.word 271 25

@@ -68,7 +68,7 @@ COL_LOOP:
     #Stage 4: finish  all done
     halt $zero, $zero, $zero, 0
 
-    .word  0x100 , 0x0   # A 
-    .word  0x101 , 0x500   # B 
-    .word  0x102 , 0x501   # C 
-    .word  0x103 , 0x1   # D 
+    #.word  0x100 , 0x0   # A 
+    #.word  0x101 , 0x500   # B 
+    #.word  0x102 , 0x501   # C 
+    #.word  0x103 , 0x1   # D 

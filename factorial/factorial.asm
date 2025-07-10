@@ -12,5 +12,5 @@ Done:   sw   $t1, $zero, $imm, 0x101   # MEM[0x101] ← product (store result)  
         halt $zero, $zero, $zero, 0     # end execution
 
         # put the test-value 5 at 0x100, and maybe clear 0x101
-        .word 0x100 8
-        .word 0x101 0
+        #.word 0x100 5
+        #.word 0x101 0
