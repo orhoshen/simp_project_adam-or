@@ -252,7 +252,7 @@ void write_output_file_regout(simulator* simulator, char* regout_fp)
 {
     FILE* regout_fh = open_file_to_write(regout_fp);
     for (int i = 2; i < NUMBER_OF_REGS; i++) {
-        fprintf(regout_fh, "0x%08X, decimal: %08d\n", simulator->regs[i], simulator->regs[i]); //fixme print only hexa without 0x. i.e. remove decimal and 0x
+        fprintf(regout_fh, "%08X\n", simulator->regs[i]);
     }
     fclose(regout_fh);
     return;
@@ -358,7 +358,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
     FILE* display7seg_fh = open_file_to_write(display7seg_fp);
     // Initialize trace file 
     FILE* trace_fh = open_file_to_write(trace_fp);
-    fclose(trace_fh); //fixme - why is this here? is it needed?
+    fclose(trace_fh); 
     // IO names pattern
     const char* io_names[] = { "irq0enable", "irq1enable", "irq2enable", "irq0status", "irq1status", "irq2status", "irqhandler", "irqreturn", "clks", "leds", "display7seg",
                               "timerenable", "timercurrent", "timermax", "diskcmd", "disksector", "diskbuffer", "diskstatus", "reserved", "reserved", "monitoraddr", "monitordata", "monitorcmd" };
@@ -370,7 +370,9 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         branch_en = false;
         if (simulator->in_second_cycle_of_bigimm) {
             simulator->in_second_cycle_of_bigimm = false;
-            printf("[BIGIMM] Second cycle at PC=%03X, imm32=%d\n", simulator->PC, simulator->pending_inst->imm32); //fixme remove later
+            #ifdef DEBUG
+                printf("[BIGIMM] Second cycle at PC=%03X, imm32=%d\n", simulator->PC, simulator->pending_inst->imm32);
+            #endif
             write_output_file_trace(simulator, trace_fp, simulator->pending_inst);
 
             simulator->regs[REG_IMM] = simulator->pending_inst->imm32;
@@ -380,7 +382,7 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
 
             inc_clk(simulator);  // tick #2            
             timer(simulator);    //  IRQ0 after completing bigimm instruction        
-            disk_main_handler(simulator); //IRQ1 //fixme we clearly have a problem with how writing to a disk is done. is it too much intertwined with the interrupt? 
+            disk_main_handler(simulator); //IRQ1
             irq2(simulator); //IRQ2
             free(inst);
             //free(simulator->pending_inst);
@@ -389,14 +391,16 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         }
 
         instruction* inst = initialize_instruction(simulator);         // Fetch an instruction and increase clock
-        printf("[FETCH] PC=%03X, opcode=%d, rd=%d, rs=%d, rt=%d, bigimm=%d, imm32=%d\n", simulator->PC, inst->opcode, inst->rd, inst->rs, inst->rt, inst->bigimm, inst->imm32); //fixme print remove later
+        #ifdef DEBUG
+            printf("[FETCH] PC=%03X, opcode=%d, rd=%d, rs=%d, rt=%d, bigimm=%d, imm32=%d\n", simulator->PC, inst->opcode, inst->rd, inst->rs, inst->rt, inst->bigimm, inst->imm32); 
+        #endif
         inc_clk(simulator); // Increase clock cycle counter (done for every instruction)
 
         if (inst->bigimm && !simulator->handling_irq) {
             simulator->in_second_cycle_of_bigimm = true;
         }
 
-        // Interrupts trigering // fixme - mabe remove this part above the in_second_cycle_of_bigimm evaluation?
+        // Interrupts trigering
         timer(simulator); // IRQ0
         disk_main_handler(simulator); // IRQ1
         irq2(simulator);  // IRQ2
@@ -414,13 +418,10 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         // Protect $zero and $imm registers from writing 
         invalid_write_attempt = (inst->rd == REG_ZERO || inst->rd == REG_IMM) &&
             (inst->opcode == ADD || inst->opcode == SUB || inst->opcode == MUL || inst->opcode == AND || inst->opcode == OR || inst->opcode == XOR ||
-                inst->opcode == SLL || inst->opcode == SRA || inst->opcode == SRL || /* fixme possibly bug here: inst->opcode == JAL || */  inst->opcode == LW || inst->opcode == SW || inst->opcode == IN);
+                inst->opcode == SLL || inst->opcode == SRA || inst->opcode == SRL || inst->opcode == LW || inst->opcode == SW || inst->opcode == IN);
 
         if (invalid_write_attempt)  //maybe this too should be above evaluation of in_second_cycle_of_bigimm - theoretically if this operation was bigimm but was illegal we woudn't want to process the second register
         {
-            //if (branch_en == false) { //fixme - is needed? (1)
-            //simulator->PC += 1 + inst->bigimm; // Increase PC once done with an instruction execution if bigimm increse by two
-            //} //fixme is needed? (2)
             inc_clk(simulator); // Increase clock cycle count 
             free(inst);
             continue;
@@ -468,7 +469,9 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         case BNE: {
             if (simulator->regs[inst->rs] != simulator->regs[inst->rt])
             {
-                printf("[BNE] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); //fixme
+                #ifdef DEBUG
+                    printf("[BNE] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); 
+                #endif
                 simulator->PC = simulator->regs[inst->rd];
                 branch_en = true;
             }
@@ -477,7 +480,9 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         case BLT: {
             if (simulator->regs[inst->rs] < simulator->regs[inst->rt])
             {
-                printf("[BEQ] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); //fixme
+                #ifdef DEBUG
+                    printf("[BEQ] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); 
+                #endif
                 simulator->PC = simulator->regs[inst->rd];
                 branch_en = true;
             }
@@ -486,7 +491,9 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         case BGT: {
             if (simulator->regs[inst->rs] > simulator->regs[inst->rt])
             {
-                printf("[BGT] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); //fixme
+                #ifdef DEBUG
+                    printf("[BGT] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); 
+                #endif
                 simulator->PC = simulator->regs[inst->rd];
                 branch_en = true;
             }
@@ -495,7 +502,9 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         case BLE: {
             if (simulator->regs[inst->rs] <= simulator->regs[inst->rt])
             {
-                printf("[BLE] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); //fixme
+                #ifdef DEBUG
+                    printf("[BLE] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]);
+                #endif
                 simulator->PC = simulator->regs[inst->rd];
                 branch_en = true;
             }
@@ -504,7 +513,9 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         case BGE: {
             if (simulator->regs[inst->rs] >= simulator->regs[inst->rt])
             {
-                printf("[BGE] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); //fixme
+                #ifdef DEBUG
+                    printf("[BGE] Taken: PC=%03X → %03X (rd holds %d)\n", simulator->PC, simulator->regs[inst->rd], simulator->regs[inst->rd]); 
+                #endif
                 simulator->PC = simulator->regs[inst->rd];
                 branch_en = true;
             }
@@ -512,10 +523,12 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         } // if (R[rs] >= R[rt]) pc = R[rd]
     // Jump and link command:
         case JAL: {
-            printf("[JAL] PC=%d, writing return=%d to reg %d, jumping to %d\n", simulator->PC, simulator->PC + (inst->bigimm == 1) + 1, inst->rd, simulator->regs[inst->rs]); //fixme print
+            #ifdef DEBUG
+                printf("[JAL] PC=%d, writing return=%d to reg %d, jumping to %d\n", simulator->PC, simulator->PC + (inst->bigimm == 1) + 1, inst->rd, simulator->regs[inst->rs]);
+            #endif
             simulator->regs[inst->rd] = simulator->PC + (inst->bigimm == 1) + 1; // R[rd] = next instruction address
             simulator->PC = simulator->regs[inst->rs]; //  pc = R[rs]
-            branch_en = true; // we always jump //fixme??? is this a branch? could be a bug
+            branch_en = true; // we always jump
             break;
         }
 
@@ -529,7 +542,9 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
                 break;
             }
             simulator->regs[inst->rd] = simulator->memory[addr];
-            printf("[LW] R[%d] ← MEM[%d] = %08X\n", inst->rd, addr, simulator->memory[addr]); //fixme
+            #ifdef DEBUG
+                printf("[LW] R[%d] ← MEM[%d] = %08X\n", inst->rd, addr, simulator->memory[addr]);
+            #endif
             break;
         } // R[rd] = MEM[R[rs]+R[rt]], with sign extension
         case SW: {
@@ -539,14 +554,18 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
                 mem_error(addr, "SW - tried to store a word to an illegal address in memory");
                 break;
             }
-            printf("[SW] MEM[%d] ← R[%d] = %08X\n", addr, inst->rd, simulator->regs[inst->rd]); //fixme
+            #ifdef DEBUG
+                printf("[SW] MEM[%d] ← R[%d] = %08X\n", addr, inst->rd, simulator->regs[inst->rd]);
+            #endif
             simulator->memory[addr] = simulator->regs[inst->rd];
             break;
         } // MEM[R[rs]+R[rt]] = R[rd] (bits 19:0)
 
 //IRQ command:
         case RETI: {
-            printf("[RETI] Returning from IRQ → PC = %03X\n", simulator->io_regs[IO_REG_IRQ_RETURN]);
+            #ifdef DEBUG
+                printf("[RETI] Returning from IRQ → PC = %03X\n", simulator->io_regs[IO_REG_IRQ_RETURN]);
+            #endif
             simulator->PC = simulator->io_regs[IO_REG_IRQ_RETURN];
             simulator->handling_irq = false; // Disable irq handling flag
             branch_en = true;
@@ -615,16 +634,22 @@ void run_simulator(simulator* simulator, char* memout_fp, char* regout_fp, char*
         // Check for & handle interrupts
         if (irq && !simulator->handling_irq) // IRQ asserted and CPU is not handling another IRQ
         {
-            printf("[IRQ] IRQ taken at clk=%08X → PC jumps to irqhandler=%03X\n", //fixme
+            #ifdef DEBUG
+                printf("[IRQ] IRQ taken at clk=%08X → PC jumps to irqhandler=%03X\n",
                     simulator->io_regs[IO_REG_CLKS],
                     simulator->io_regs[IO_REG_IRQ_HANDLER]);
+            #endif
+
             simulator->io_regs[IO_REG_IRQ_RETURN] = simulator->PC; // Save current PC into irq_return hwreg
             simulator->PC = simulator->io_regs[IO_REG_IRQ_HANDLER];// Change current PC to irq_handler
             simulator->handling_irq = true; // Assert irq handling flag
-            printf("[IRQ STATUS] irq0=%d irq1=%d irq2=%d\n", //fixme
-       simulator->io_regs[IO_REG_IRQ_0_STATUS],
-       simulator->io_regs[IO_REG_IRQ_1_STATUS],
-       simulator->io_regs[IO_REG_IRQ_2_STATUS]);
+            
+            #ifdef DEBUG
+                printf("[IRQ STATUS] irq0=%d irq1=%d irq2=%d\n",
+                    simulator->io_regs[IO_REG_IRQ_0_STATUS],
+                    simulator->io_regs[IO_REG_IRQ_1_STATUS],
+                    simulator->io_regs[IO_REG_IRQ_2_STATUS]);
+            #endif
         }
         if (!inst->bigimm)
             free(inst);

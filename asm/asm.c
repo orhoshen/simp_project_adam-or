@@ -157,8 +157,7 @@ void parse_lines(FILE* fp, label* label_arr, word* words)
             bool uses_imm = (strcmp(token_rd, "$imm") == 0) ||
                             (strcmp(token_rs, "$imm") == 0) ||
                             (strcmp(token_rt, "$imm") == 0) ||
-                            is_branch(token) ; //fixme branch does not always use $imm... only if it has labels with it...
-                            //((strcmp(token, "jal") == 0) && (token_rs && strcmp(token_rs, "$imm") == 0)); //fixme!!!! 
+                            is_branch(token) ; //fixme branch does not always use $imm... only if it has labels with it..
             if (uses_imm)
             {
                 bool bigimm = true;
@@ -257,7 +256,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         if (contains_label(token, (int)strlen(token))) // we have a label
         {
             token = strtok(NULL, DELIMITER); //taking the first real token 
-            if (token == NULL) continue; // only label in line, else we just continue normally //fixme - should we advance pc here or not?
+            if (token == NULL) continue; // only label in line, else we just continue normally 
         }
 
         // Handling assembly - regular commands
@@ -265,31 +264,37 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         token2 = strtok(NULL, DELIMITER); //taking third token-will represent rs reg
         token3 = strtok(NULL, DELIMITER); //taking fourth token-will represent rt reg
         token4 = strtok(NULL, DELIMITER); //taking fifth token-will represent const
-        printf("tototoken: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+        #ifdef DEBUG
+            printf("tototoken: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+        #endif
         
 
         inst.opcode = decode_opcode_wrapper(token, pc);
 
-        if (is_branch(token)) { //fixme! not all branches are bigimm.... for example beq $ra, $zero, $zero, 0
+        if (is_branch(token)) { // not all branches are bigimm for example beq $ra, $zero, $zero, 0
             if (is_label_name(token4, label_arr)) {
                 inst.rd = decode_reg_wrapper(token1, pc);
-                inst.rs = decode_reg_wrapper(token2, pc);      //only in branch lines
+                inst.rs = decode_reg_wrapper(token2, pc);     
                 inst.rt = decode_reg_wrapper(token3, pc);
                 int label_addr = decode_imm(token4, label_arr);
                 inst.bigimm = 1;
                 inst.imm8   = 0;
-                printf("Writing branch instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+                #ifdef DEBUG
+                    printf("Writing branch instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+                #endif
                 print_line2memin(inst, outputfp, words, pc, label_addr);
                 pc += 2;
                 continue;
             } else {
                 inst.rd = decode_reg_wrapper(token1, pc);
-                inst.rs = decode_reg_wrapper(token2, pc);      //only in branch lines
+                inst.rs = decode_reg_wrapper(token2, pc);     //code is needlessly duplicated here...
                 inst.rt = decode_reg_wrapper(token3, pc);
                 int label_addr = decode_imm(token4, label_arr);
                 inst.bigimm = 0;
                 inst.imm8   = label_addr;
-                printf("Writing branch instruction2: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+                #ifdef DEBUG
+                    printf("Writing branch instruction2: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+                #endif
                 print_line2memin(inst, outputfp, words, pc, 0);
                 pc += 1;
                 continue;
@@ -307,7 +312,6 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
                 inst.imm8   = 0;
 
                 int target  = decode_imm(token4, label_arr); // label/num
-                printf("Writing jal instruction1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
                 print_line2memin(inst, outputfp, words, pc, target);
                 pc += 2;
             }
@@ -317,8 +321,6 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
                 inst.rt     = decode_reg_wrapper(token3, pc);
                 inst.bigimm = 0;
                 inst.imm8   = 0;
-
-                printf("Writing jal instruction2: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
                 print_line2memin(inst, outputfp, words, pc, 0);
                 pc += 1;
             }
@@ -344,14 +346,14 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
             if (imm_value >= -128 && imm_value <= 127 && !is_label_name(token4, label_arr)) {
                 inst.bigimm = 0;
                 inst.imm8 = (uint8_t)(imm_value & 0xFF);
-                printf("Writing instruction writing memin bigimm=0: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+                //printf("Writing instruction writing memin bigimm=0: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
                 print_line2memin(inst, outputfp, words, pc, imm_value);
                 pc += 1;
                 continue;
             } else { //requires second register
                 inst.bigimm = 1;
                 inst.imm8 = 0;
-                printf("Writing instruction4 writing memin bigimm=1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+                //printf("Writing instruction4 writing memin bigimm=1: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
                 print_line2memin(inst, outputfp, words, pc, imm_value);
                 //fprintf(outputfp, "%08X\n", (uint32_t)imm_value);
                 pc += 2;
@@ -361,7 +363,7 @@ void write2memin(FILE* inputfp, label* label_arr, FILE* outputfp, word* words)
         else { //no imm
             inst.bigimm = 0;
             inst.imm8   = 0;
-            printf("Writing instruction no imm in command: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
+            //printf("Writing instruction no imm in command: %s %s %s %s %s at PC = %d\n", token, token1, token2, token3, token4, pc);
             print_line2memin(inst, outputfp, words, pc, 0);
             pc += 1;
         }
@@ -429,8 +431,7 @@ int decode_imm(char* imm, label* labels) {
             return labels[i].line;
         }
     }
-    //printf("decode_imm: raw input = [%s]\n", imm);
-    //printf("[decode_imm] Label '%s' not found, defaulting to numeric conversion (may be an error!)\n", imm); //fixme
+
     // Strip trailing newline
     size_t len = strlen(imm);
     if (len > 0 && imm[len - 1] == '\n') {
@@ -499,9 +500,9 @@ int main(int argc, char* argv[])
     memset(words,  0, sizeof(words));
 
     parse_lines(assembly_fp, labels, words);
-    for (int i = 0; i < MAX_NUMBER_OF_LABELS && labels[i].set; i++) {
-        printf("Label '%s' is at PC = %d\n", labels[i].name, labels[i].line);
-    }
+    //for (int i = 0; i < MAX_NUMBER_OF_LABELS && labels[i].set; i++) {
+    //    printf("Label '%s' is at PC = %d\n", labels[i].name, labels[i].line);
+    //}
     fclose(assembly_fp);
 
     FILE* assembly_fp1 = open_file_to_read(argv[1]);
