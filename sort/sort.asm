@@ -24,7 +24,6 @@ LOOP1:  beq  $imm, $t0,  $a0,  END       # if i == 15 ⟹ END
 LOOP2:
         # compute current upper-bound  (limit = 14 – i)
         sub  $t2,  $a0,  $t0, 0          # t2 = 15 – i
-        #sub  $t2,  $t2,  $imm, 1         # t2 = t2 – 1  → 14 – i
         beq  $imm, $t1,  $t2,  INC_I     # if j == limit ⟹ outer++ 
 
         # ---- load A[j] and A[j+1] ----
